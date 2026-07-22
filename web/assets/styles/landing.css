@@ -137,7 +137,7 @@
 
 .flash {
   position: absolute; inset: 0; pointer-events: none; z-index: 6;
-  background: radial-gradient(circle at 70% 65%, rgba(243,214,120,0.55), transparent 55%);
+  background: radial-gradient(circle at 30% 35%, rgba(243,214,120,0.55), transparent 55%);
   opacity: 0;
 }
 .flash.go { animation: flash 1s ease-out; }

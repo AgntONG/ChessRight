@@ -58,13 +58,13 @@
 
   function buildSquares() {
     var html = '';
-    for (var r = 8; r >= 1; r--) {
-      for (var f = 0; f < 8; f++) {
+    for (var r = 1; r <= 8; r++) {
+      for (var f = 7; f >= 0; f--) {
         var sq = FILES[f] + r;
         var light = (f + r) % 2 === 0;
         html += '<div class="sq ' + (light ? 'lt' : 'dk') + '" data-sq="' + sq + '">';
-        if (f === 0) html += '<i class="rk">' + r + '</i>';
-        if (r === 1) html += '<i class="fl">' + FILES[f] + '</i>';
+        if (f === 7) html += '<i class="rk">' + r + '</i>';
+        if (r === 8) html += '<i class="fl">' + FILES[f] + '</i>';
         html += '</div>';
       }
     }
@@ -77,8 +77,8 @@
   function placePiece(el, sq) {
     var f = sq.charCodeAt(0) - 97;
     var r = parseInt(sq[1], 10);
-    el.style.left = (f * 12.5) + '%';
-    el.style.top = ((8 - r) * 12.5) + '%';
+    el.style.left = ((7 - f) * 12.5) + '%';
+    el.style.top = ((r - 1) * 12.5) + '%';
   }
 
   function makePieceEl(piece) {

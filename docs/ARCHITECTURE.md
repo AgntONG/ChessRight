@@ -1,140 +1,93 @@
 # Architecture
 
-This document describes how ChessRight's components fit together, what each one owns, how a typical game flows through the system, where it fails, and how it handles the constraints of its host platform.
+ChessRight is a frontend-only chess platform. Everything runs in the browser — no server, no database, no API. The only network dependency is the PeerJS broker (used to establish P2P connections) and the free STUN servers used during WebRTC negotiation.
 
-If you only have time for one diagram, this is it.
+## Overview
 
 ```
-Browser                          Cloudflare Edge              Peer
-┌────────────────┐              ┌──────────────┐            ┌────────┐
-│ Pages frontend │ ──REST─────► │ Worker (Hono)│            │ Browser│
-│  landing       │              │  /api/auth   │            │ (peer) │
-│  play.html     │ ◄─long-poll─ │  /api/match  │            └───┬────┘
-│  account       │              │  /api/games  │                │
-│                │              │  D1 + D.O.   │                │
-│ Stockfish WASM │              └──────┬───────┘                │
-│ (Web Worker)   │                     │                        │
-│                │                     │ signaling              │
-│ PeerJS client  │ ◄────WebRTC data channel─────────────────►   │
-└────────────────┘                                              │
+Browser
+┌──────────────────────────────────────────────────┐
+│  Pages: index.html · play.html · account.html    │
+│                                                  │
+│  Stockfish WASM (Web Worker)                     │
+│    ↳ bot opponent · post-game analysis           │
+│                                                  │
+│  PeerJS (WebRTC P2P)                             │
+│    ↳ invite links · real-time moves              │
+│                                                  │
+│  localStorage                                    │
+│    ↳ user profile · game history · ratings       │
+└──────────────────────────────────────────────────┘
 ```
 
-The Worker's job is narrow: anonymous auth, matchmaking coordination, and persistence. Everything that is hot path during a game — move exchange, clock, legality — runs client-side and peer-to-peer. This is the single most important design choice in the system, and it is what lets the whole thing fit on the Cloudflare free tier.
+No part of a game — moves, clocks, results, ratings — touches a server we operate. The trade-offs of that shape most of this document.
 
 ## Component responsibilities
 
-### Frontend pages
+### Pages
 
-- **`index.html` (landing).** The marketing front door. The signature element is the "brilliant move" animation in `landing.js`: a single tactical sequence rendered on a custom canvas-style board, sequenced against audio. Its only role is to make visitors click Play.
-- **`play.html` (game client).** Everything that happens during a session: lobby (bot, ranked, invite, casual), board interaction, clocks, post-game analysis. The `scripts/play/` modules below collaborate to drive this page.
-- **`account.html`.** Profile (handle, rating, RD), game history with replay, and the top-100 leaderboard. Pulls from `/api/users/me`, `/api/games`, and `/api/leaderboard`.
+- **`index.html`** — Landing page. The signature element is the Marshall brilliancy animation in `landing.js` (Levitsky vs Marshall, Breslau 1912): a single tactical sequence rendered on a custom board. Its only role is to make visitors click Play.
+- **`play.html`** — Game client: lobby (bot or friend), board, eval bar, clocks, post-game analysis. The `scripts/play/` modules below collaborate to drive this page.
+- **`account.html`** — Profile, game history with replay, and stats. Reads entirely from `localStorage` via `store.js`.
 
-### `scripts/play/main.js` — game controller
+### Modules (`web/scripts/play/`)
 
-The orchestrator. Wires together the board, the engine, the network client, the clock, and the local store into a state machine: `lobby → in-game (playing) → ended (analysis)`. Owns the canonical move list during play. Coordinates teardown when a game ends or the opponent disconnects.
+- **`main.js`** — `GameController`: orchestrates board, engine, clock, P2P, and store into a state machine (`lobby → in-game → ended`). Owns the canonical move list during play.
+- **`board.js`** — Custom board renderer (CSS grid + absolutely-positioned pieces, GPU-composited transforms for movement). Purely presentational; move legality lives in `chess.js`.
+- **`engine.js`** — Stockfish WASM wrapper. Owns the Web Worker lifecycle, UCI protocol (`position`, `go`, `setoption`), and Lichess-style skill scaling across 20 levels mapped to a 1320–3190 ELO range.
+- **`accuracy.js`** — Pure, stateless functions turning `(eval-before, eval-after)` pairs into per-move accuracies, a game-average accuracy, and an estimated ELO. Fully specified in [ACCURACY.md](ACCURACY.md).
+- **`store.js`** — `localStorage` persistence. Owns the user profile, game history, and Glicko-1 rating math (the same formulas ACCURACY.md describes).
+- **`net.js`** — PeerJS invite host/guest for P2P multiplayer. Handles the `CR-XXXXXX` invite-code flow and the WebRTC data channel used for moves.
+- **`clock.js`** — Increment chess clocks with drift correction. Pauses on `visibilitychange` to prevent background-tab throttling from stealing a player's time.
 
-### `scripts/play/board.js` — custom board renderer
+### Key design decisions
 
-A self-contained board built from scratch rather than pulled from a library. Pieces are absolutely positioned; movement is animated with CSS transforms (GPU-composited `translate`) so reflows are avoided during drag and animation. The interaction model (click-to-select, drag-to-move, drop-highlighting of legal targets) is reused from the landing-page brilliancy animation — same primitives, different driver. The board is purely presentational: it does not own move legality, that lives in chess.js.
+- **No build step.** Vanilla ES modules with relative imports. The browser handles everything. The cost is giving up bundler niceties (tree-shaking, minification, HMR); the benefit is that the repo runs with `python -m http.server` and stays readable end-to-end.
+- **No framework.** Keeps the bundle small and the code accessible to contributors who don't know your specific framework. The DOM is small enough that a framework would not pay for itself.
+- **Offline-first.** All game data — profile, ratings, history — lives in `localStorage`. Bot games work fully offline. P2P games need the network only for the live connection itself.
+- **Custom board.** Built from scratch rather than using `cm-chessboard` or `chessground`. The interaction primitives (click-to-select, drag-to-move, drop-highlighting) are shared with the landing-page brilliancy animation, so the two render identically.
+- **No trusted authority.** Without a server there is no server-authoritative rating and no anti-cheat. Ratings reflect what the local client computed and stored. This is calibrated to the project's goals (a free, friendly place to play), not to tournament integrity. See [Limitations](#limitations).
 
-### `scripts/play/engine.js` — Stockfish WASM wrapper
+## Data flow
 
-Owns the lifecycle of the Stockfish Web Worker: loading the vendored `assets/stockfish/*.wasm`, falling back to the jsdelivr CDN if the local file fails, posting UCI commands (`position`, `go`, `setoption`), and parsing `info depth ... cp ... pv ...` lines back into structured evaluations. Skill level maps linearly across 20 steps to a 1320–3190 ELO range. Engine failure is non-fatal — see [Failure modes](#failure-modes--fallbacks).
+### Bot game
 
-### `scripts/play/accuracy.js` — accuracy and estimated ELO
+1. User picks a skill level → `engine.js` configures Stockfish via UCI `setoption` (depth limit, skill level, and the random-move subroutines that emulate lower ELOs).
+2. User moves → `chess.js` validates → `board.js` animates → engine evaluates the resulting position.
+3. Bot's turn → `engine.bestMove({ fen })` → controller applies the move → eval bar updates.
+4. Game ends (mate, stalemate, resignation, timeout, draw) → `analyzeGame(moveHistory)` runs each position through Stockfish → per-move accuracy + estimated ELO → `store.saveGame()`.
 
-Pure, stateless functions that turn a list of (eval-before, eval-after) pairs into per-move accuracies, a game-average accuracy, and an estimated ELO. This is the heart of the post-game report and is fully specified in [ACCURACY.md](ACCURACY.md). It has no DOM and no I/O — it is callable from tests and from the Worker if we ever move analysis server-side.
+### P2P game (invite link)
 
-### `scripts/play/store.js` — offline-first persistence
+1. Host clicks "Create game" → `net.js` mints a `CR-XXXXXX` code, registers a PeerJS peer with that ID on the public broker, and shows a shareable link `play.html?join=CR-XXXXXX`.
+2. Guest opens the link → `net.js` reads the code from the query string and opens a WebRTC connection to the host's peer ID.
+3. The WebRTC data channel carries moves: `{ t: 'move', from, to, promotion, clockAfter }`. Each side runs the move through `chess.js` locally and redraws.
+4. Game ends → both sides compute accuracy independently and call `store.saveGame()` locally.
 
-Writes profile, ratings, and finished games to `localStorage` immediately and queues a sync to the Worker when network is available. This is what makes ChessRight usable on a flaky connection: you can finish a bot game offline and your local rating updates instantly, then the game record syncs when you reconnect. Rated P2P games require the Worker for both matching and result submission, so they are not playable offline — only bot and casual games are.
+This is honor-system P2P. There is no arbiter: each client trusts the other's move legality (validated locally by `chess.js` against the position, which catches accidental illegal moves) and trusts the other not to be running an engine. That is fine for friendly games; it is the fundamental ceiling of a design with no server in the live path.
 
-### `scripts/play/net.js` — matchmaking and peer transport
-
-Two distinct responsibilities in one module:
-
-- `MatchClient` — REST client over `fetch` for `/api/match/queue`, `/api/match/poll`, `/api/match/leave`, and `/api/invite/*`. Long-polls the queue for a match assignment.
-- `PeerConnection` — wraps the PeerJS data channel. Once the queue returns both peer IDs, this layer takes over: it opens the channel, sends/receives move messages, and signals disconnects back to the controller.
-
-The boundary between these two is the moment matchmaking ends and gameplay begins. The Worker hands off and steps out.
-
-### `scripts/play/clock.js` — chess clocks
-
-Increment chess clocks (think `3+2`, `5+0`, `10+0`). Each side has a remaining-time counter that ticks on an interval and an increment added after each completed move. Critically, the clock **pauses** when the tab loses focus (`document.visibilitychange`) and **resumes** on focus — otherwise background-tab throttling would silently steal a player's time.
-
-### Worker router — `worker/src/index.js`
-
-Hono app exposing the REST surface. Routes (all under `/api`):
-
-| Route | Method | Purpose |
-|---|---|---|
-| `/api/auth/anonymous` | `POST` | Mint or refresh an anonymous HMAC token. |
-| `/api/users/me` | `GET` | Current profile (rating, RD, record). |
-| `/api/match/queue` | `POST` | Enter the matchmaking queue. |
-| `/api/match/poll` | `GET` | Long-poll for a match assignment. |
-| `/api/match/leave` | `POST` | Withdraw from the queue. |
-| `/api/invite` | `POST` / `GET` | Create or redeem a 6-char invite code. |
-| `/api/games` | `POST` / `GET` | Submit a finished game; list history. |
-| `/api/leaderboard` | `GET` | Top-100 by rating. |
-
-The router is thin: it parses requests, calls into the relevant module (`auth.js`, `games.js`, `leaderboard.js`, `elo.js`), and serializes the result. Business logic lives in those modules.
-
-### D1 schema — `worker/schema.sql`
-
-Three tables:
-
-- **`users`** — `id`, `handle`, Glicko-1 `rating` + `rating_rd`, W/L/D counts, timestamps. Indexed by `rating DESC` for leaderboard.
-- **`games`** — one row per finished game per player. Stores PGN, move list JSON, accuracy, estimated ELO, accuracy buckets, result, ending type, duration, and a `hash` that both clients must agree on (see [Security model](#security-model)). Uniqueness on `(user_id, hash)` makes duplicate submissions idempotent.
-- **`invites`** — 6-char codes pointing at the creator's peer ID and rating, with an optional time control. Auto-expires when taken.
-
-### `MatchQueue` Durable Object — `worker/src/queue.js`
-
-A single Durable Object is the entire matchmaking coordinator. Why a DO and not plain D1 or KV?
-
-- **Single-threaded coordination.** Two players must not be matched to the same opponent. A DO gives a single-threaded inbox per object ID, so we can pop a waiting player and assign a new one without races. With D1 + naive `SELECT FOR UPDATE` semantics you would have to think hard about concurrent transactions; the DO sidesteps the problem entirely.
-- **In-memory state.** The queue is transient: it is fine to lose on a restart. A DO's in-memory storage is fast and free of read/write billing while the DO is alive.
-- **Long-polling home.** The DO is the natural place to hold a `waitUntil` for the long-poll request, pair the requester, and respond when a match appears.
-
-The queue stores waiting players keyed by time control + rating band. On a new enqueue, the DO scans for a compatible partner (within an expanding rating window as time-on-queue grows); if none, the requester parks and the next compatible enqueue pairs with them.
-
-## Data flow: a typical ranked game
-
-1. **Open `play.html`.** The controller boots, loads `store.js` (profile + queued syncs), and connects to the engine. User clicks **Find match**.
-2. **Enter queue.** `net.js` POSTs to `/api/match/queue` with the user's token, rating, and time control. The Worker routes the request to the `MatchQueue` DO, which parks the player.
-3. **Long-poll.** `net.js` GETs `/api/match/poll` on a loop (each request capped under 25s to fit the Worker wall-clock limit). The DO holds the request open until either a partner is found or the poll expires.
-4. **Matched.** The DO returns both peer IDs, both ratings, a color assignment, and a shared game ID. Both clients receive this payload and transition to `in-game`.
-5. **P2P connection.** Each client opens a PeerJS connection to the other's peer ID. The Worker is now out of the live path.
-6. **Move exchange.** Each move goes over the data channel: `{type: 'move', from, to, promotion, clockAfter}`. Both clients run the move through chess.js locally, redraw the board, swap the clock.
-7. **Game ends.** A terminal condition (checkmate, stalemate, resignation, timeout, draw agreement) is detected on both sides. Each client independently computes its own move list, accuracy, and a hash of the final position history.
-8. **Submit.** Both clients POST `/api/games` with their perspective of the result, the PGN, and the hash. The Worker applies the Glicko-1 update for each player and stores the row. The `(user_id, hash)` uniqueness constraint dedupes if one client retries.
-9. **Leaderboard.** The next `/api/leaderboard` request reflects the new ratings — within 60 seconds, when the cached response expires.
-
-## Failure modes & fallbacks
+## Failure modes
 
 | Failure | Detection | Fallback |
 |---|---|---|
-| Worker unreachable | `fetch` rejects or times out | Offline mode: bot and casual games still work; rated games are blocked with a toast. Pending game syncs queue in `localStorage` and flush on reconnect. |
-| P2P connection fails | PeerJS `error` event or no data-channel open within ~10s | Offer a bot fallback at the matched rating so the user still gets a game. |
-| Stockfish fails to load | Engine `onError`, or `readyPromise` rejects | Disable bot play and post-game analysis. Human games remain fully playable. The board and rules do not depend on the engine. |
-| Opponent disconnects mid-game | Data channel `close` or inactivity timeout | Game is scored as abandoned; the disconnecting player forfeits on time, the remaining player may submit the result. |
-| Tab inactive | `visibilitychange` → `hidden` | Clock pauses. Resumes on focus. This prevents background-tab throttling from silently burning a player's clock. |
-| Worker 30s wall limit | Long-poll approaching 25s mark | Client re-issues the poll; the DO state is preserved between polls. |
+| Stockfish fails to load | `engine.js` `onError`, or `readyPromise` rejects | Bot play and post-game analysis are disabled. Human games are unaffected — the board and rules do not depend on the engine. |
+| P2P connection fails | PeerJS `error` event, or no data-channel open within ~10s | Surface a clear error and offer a bot game at the chosen skill level so the user still gets to play. Symmetric NAT and the absence of a TURN relay are the most common causes. |
+| `localStorage` full | `setItem` throws `QuotaExceededError` | Games are capped at 500 (oldest dropped on insert). Profile and most-recent games are kept; older history is sacrificed first. |
+| Opponent disconnects mid-game | Data channel `close` or inactivity timeout | Game is scored as abandoned; the local side may save the result. |
+| Tab backgrounded | `visibilitychange → hidden` | Clock pauses. Resumes on focus. Prevents browser background-tab throttling from silently burning a player's clock. |
 
-## Performance considerations
+## Performance
 
-- **D1 reads.** The free tier allows 5M reads/day. Leaderboard is the hottest endpoint and would otherwise hammer the `users` table, so it is cached at the edge for 60 seconds via the Workers Cache API. A typical ranked game makes roughly 10 Worker calls (auth refresh, queue, a few polls, submit); at that rate a user would need ~500k games/day to hit the limit.
-- **Worker wall-clock.** Workers have a 30-second wall-clock limit. Long-polls are issued with a 25-second client-side timeout so the request returns cleanly before the Worker is killed, then the client re-polls. The DO keeps queue state across polls.
-- **Stockfish WASM size.** The engine binary is roughly 1MB. It is served from the same Pages origin as the rest of the static assets, so it benefits from the same aggressive cache headers and CDN. After first load it is served from disk cache on subsequent visits.
-- **Board rendering.** Pieces use CSS transforms (`translate3d`) for movement, which the browser composites on the GPU. No layout work happens during drag or animation, so 60fps holds even on mid-range mobile.
-- **Durable Object cost.** DOs bill per request and per gigasecond of duration on the free tier's 100k requests/day. The queue DO is hot only during active matchmaking, so it has negligible wall duration.
+- **Stockfish WASM** is roughly 575 KB on the wire. It is served from the same origin as the rest of the static assets on GitHub Pages, so it inherits the browser's HTTP cache and is served from disk on subsequent visits.
+- **Board rendering** uses CSS `translate3d` transforms for piece movement, which the browser composites on the GPU. No layout work happens during drag or animation, so 60fps holds on mid-range mobile.
+- **PeerJS** uses the free public broker (`0.peerjs.com`) for signaling and Google's public STUN servers for ICE. Both are free, rate-limited, and fine for hobby-scale traffic. A self-hosted broker or TURN relay would be needed for higher reliability — see [Contributing](CONTRIBUTING.md).
 
-## Security model
+## Limitations
 
-ChessRight is honest about its threat model: it is a hobby chess site, not a tournament platform. The security model is calibrated accordingly.
+A frontend-only design has a hard ceiling. The things it cannot do are not bugs to fix inside the current architecture; they are the cost of the design.
 
-- **Anonymous auth, no passwords.** Identity is a randomly generated user ID signed with an HMAC secret known only to the Worker (`AUTH_SECRET`). Tokens are returned to the client and sent back in the `Authorization` header. There is no PII and no password to leak; the worst case of a stolen token is that someone else can play rated games under your handle.
-- **Server-authoritative ratings.** The client cannot claim a win. Rating updates are computed inside the Worker (`elo.js`) from a submitted game record. A client that tampers with the payload can at best pollute its own game history; it cannot inflate its rating without submitting games that pass server-side validation.
-- **Result cross-checking.** Both clients must POST the same terminal hash (a digest over the move sequence and final position). If the hashes disagree, the Worker rejects the submission. This catches accidental divergence and casual cheating; it does not catch two colluding clients, which is fundamentally unsolvable without server-side move verification.
-- **Anti-cheat is minimal, by design.** We do not run engine-detection on submitted games. Anyone determined to cheat can play engine moves over the board on another site. This is the same gap every chess platform has short of full server-side move analysis. We document it here rather than pretend otherwise.
-
-For deeper treatment of how ratings are computed and why, see [ACCURACY.md](ACCURACY.md).
+- **No cross-device profile.** Your rating, history, and handle live in the browser you played in. Clearing storage, switching devices, or using private mode starts you over. The `store.exportData()` JSON is the manual escape hatch.
+- **No authoritative rating.** A rating computed and stored on the client can be edited by the client. The number on the profile page is informational, not a credential.
+- **No anti-cheat in P2P games.** An opponent running Stockfish in another tab is undetectable from within the browser. There is no move-verification server to catch this.
+- **No global leaderboard.** Without a shared server, there is no place to aggregate ratings across players. The "leaderboard" is your own history.
+- **P2P reliability depends on network topology.** Two players behind symmetric NATs cannot connect without a TURN relay. We don't operate one.

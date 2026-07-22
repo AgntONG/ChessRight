@@ -4,11 +4,7 @@ import { Engine } from './engine.js';
 import { store } from './store.js';
 import { analyzeGame, accuracyToElo } from './accuracy.js';
 import { Clock } from './clock.js';
-import {
-  MatchClient, PeerConnection,
-  InviteHost, InviteGuest,
-  parseInviteFromUrl,
-} from './net.js';
+import { InviteHost, InviteGuest, parseInviteFromUrl } from './net.js';
 import { toast, confirm, formatTime } from '../ui.js';
 
 const GLYPH = { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' };
@@ -53,7 +49,6 @@ class GameController {
     this.peer = null;
     this.gameId = null;
     this.drawOffered = null;
-    this.apiBase = '/api';
   }
 
   async init() {
@@ -107,9 +102,6 @@ class GameController {
     if (mode === 'bot') {
       panel.innerHTML = this._botConfigHtml();
       this._wireBotConfig();
-    } else if (mode === 'human') {
-      panel.innerHTML = this._humanConfigHtml();
-      this._wireHumanConfig();
     } else if (mode === 'friend') {
       panel.innerHTML = this._friendConfigHtml();
       this._wireFriendConfig();
@@ -142,38 +134,25 @@ class GameController {
     `;
   }
 
-  _humanConfigHtml() {
-    return `
-      <div class="cfg-head">
-        <span class="cfg-title">Find a match</span>
-        <span class="cfg-sub">Auto-matchmaking</span>
-      </div>
-      <div class="cfg-row">
-        <label class="cfg-label">Time control</label>
-        <div class="tc-grid" id="tcGrid">${this._tcButtonsHtml('blitz')}</div>
-      </div>
-      <div class="cfg-foot">
-        <button class="btn btn-primary" id="startGameBtn">Search for opponent</button>
-      </div>
-    `;
-  }
-
   _friendConfigHtml() {
     return `
       <div class="cfg-head">
-        <span class="cfg-title">Join with code</span>
-        <span class="cfg-sub">6 characters</span>
+        <span class="cfg-title">Play a friend</span>
+        <span class="cfg-sub">Peer-to-peer invite</span>
       </div>
-      <div class="cfg-row">
-        <label class="cfg-label">Invite code</label>
-        <div class="code-row">
+      <div class="friend-config">
+        <div class="friend-option">
+          <h4>Create a game</h4>
+          <p>Get a code to share with your friend</p>
+          <button class="btn btn-primary" id="createInviteBtn">Create game</button>
+        </div>
+        <div class="friend-option">
+          <h4>Join a game</h4>
+          <p>Enter your friend's code</p>
           <input type="text" class="code-input" id="friendCode" maxlength="6"
                  placeholder="ABC123" autocomplete="off" spellcheck="false" />
+          <button class="btn btn-ghost" id="joinGameBtn">Join</button>
         </div>
-      </div>
-      <div class="cfg-foot">
-        <button type="button" class="btn btn-ghost" id="createInviteBtn">Create invite instead</button>
-        <button class="btn btn-primary" id="startGameBtn">Join game</button>
       </div>
     `;
   }
@@ -202,12 +181,6 @@ class GameController {
     if (start) start.addEventListener('click', () => this._startFromConfig());
   }
 
-  _wireHumanConfig() {
-    this._wireTcGrid();
-    const start = $('startGameBtn');
-    if (start) start.addEventListener('click', () => this._startFromConfig());
-  }
-
   _wireFriendConfig() {
     const input = $('friendCode');
     if (input) {
@@ -215,13 +188,23 @@ class GameController {
         input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') this._startFromConfig();
+        if (e.key === 'Enter') this._joinFriendFromConfig();
       });
     }
-    const start = $('startGameBtn');
-    if (start) start.addEventListener('click', () => this._startFromConfig());
     const createInvite = $('createInviteBtn');
     if (createInvite) createInvite.addEventListener('click', () => this.startFriendHost());
+    const join = $('joinGameBtn');
+    if (join) join.addEventListener('click', () => this._joinFriendFromConfig());
+  }
+
+  _joinFriendFromConfig() {
+    const input = $('friendCode');
+    const code = (input && input.value || '').trim();
+    if (code.length !== 6) {
+      toast({ title: 'Invalid code', message: 'Invite codes are 6 characters.', kind: 'bad' });
+      return;
+    }
+    this.startFriendGame(code);
   }
 
   _wireTcGrid() {
@@ -240,16 +223,6 @@ class GameController {
   async _startFromConfig() {
     if (this.mode === 'bot') {
       await this.startBotGame(this.skillLevel);
-    } else if (this.mode === 'human') {
-      await this.startHumanGame(this.timeControl);
-    } else if (this.mode === 'friend') {
-      const input = $('friendCode');
-      const code = (input && input.value || '').trim();
-      if (code.length !== 6) {
-        toast({ title: 'Invalid code', message: 'Invite codes are 6 characters.', kind: 'bad' });
-        return;
-      }
-      await this.startFriendGame(code);
     }
   }
 
@@ -294,124 +267,6 @@ class GameController {
     }
 
     this._startGameFlow();
-  }
-
-  async startHumanGame(timeControl) {
-    this._resetState();
-    this.mode = 'human';
-    this.timeControl = timeControl;
-    this.myColor = Math.random() < 0.5 ? 'w' : 'b';
-    this.opponent = {
-      name: 'Searching...',
-      rating: (this.user && this.user.rating) || 1200,
-      kind: 'human',
-    };
-    this._showSearching('Finding an opponent near your rating');
-
-    const user = store.ensureUser();
-    const client = new MatchClient({
-      apiBase: this.apiBase,
-      token: user.token,
-      userId: user.id,
-      rating: user.rating,
-    });
-
-    const serverUp = await client.isServerAvailable();
-    if (!serverUp) {
-      this._hideSearching();
-      const choice = await confirm({
-        title: 'Quick match unavailable',
-        message: 'The matchmaking server is not deployed. You can still play a friend by sharing an invite link, or play the engine.',
-        confirmLabel: 'Create invite link',
-        cancelLabel: 'Play engine',
-      });
-      if (choice) {
-        return this.startFriendHost();
-      }
-      return this.startBotGame(10);
-    }
-
-    try {
-      const match = await client.findMatch({
-        timeControl: timeControl.display,
-        onStatus: (status, data) => this._onMatchStatus(status, data),
-      });
-      await this._initHumanGame(match, client);
-      return;
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        this._hideSearching();
-        show($('lobby'));
-        return;
-      }
-      toast({ title: 'Matchmaking failed', message: err.message || 'No match server', kind: 'bad' });
-    }
-
-    this._hideSearching();
-    const tryBot = await confirm({
-      title: 'No match found',
-      message: 'Would you like to play the engine instead?',
-      confirmLabel: 'Play engine',
-    });
-    if (tryBot) this.startBotGame(10);
-  }
-
-  async _initHumanGame(match, client) {
-    const opp = match.opponent || {};
-    this.opponent = {
-      kind: 'human',
-      name: opp.handle || 'Opponent',
-      rating: typeof opp.rating === 'number' ? opp.rating : null,
-      peerId: opp.peerId,
-    };
-    this.myColor = match.myColor || (Math.random() < 0.5 ? 'w' : 'b');
-    this.gameId = match.gameId;
-    this._hideSearching();
-
-    const myPeerId = 'peer_' + store.ensureUser().id;
-    const role = myPeerId < opp.peerId ? 'guest' : 'host';
-
-    this.peer = new PeerConnection({
-      myPeerId,
-      role,
-      onMessage: (msg) => this._onPeerMessage(msg),
-      onDisconnect: () => this._onPeerDisconnect(),
-      onError: (err) => toast({ title: 'Connection error', message: err.message, kind: 'bad' }),
-    });
-
-    try {
-      if (role === 'guest') {
-        await this.peer.connect(opp.peerId);
-      } else {
-        await this.peer.waitForConnection();
-      }
-    } catch (err) {
-      toast({ title: 'Peer connection failed', message: err.message || 'falling back to engine', kind: 'bad' });
-      if (this.peer) { try { this.peer.close(); } catch (_) {} this.peer = null; }
-      this.startBotGame(10);
-      return;
-    }
-
-    this._refreshOppPanel();
-    this._refreshMePanel();
-    this._initBoard();
-    this._initClocks();
-    this._startGameFlow();
-  }
-
-  _onMatchStatus(status, data) {
-    const thinking = $('thinking');
-    if (!thinking) return;
-    const span = thinking.querySelector('span');
-    if (status === 'queued' || status === 'searching') {
-      if (span) span.textContent = 'Finding an opponent near your rating';
-    } else if (status === 'matched') {
-      if (span) span.textContent = 'Match found. Connecting...';
-    } else if (status === 'timeout') {
-      if (span) span.textContent = 'Search timed out';
-    } else if (status === 'error') {
-      if (span) span.textContent = 'Matchmaking error';
-    }
   }
 
   _onPeerMessage(msg) {
@@ -730,26 +585,6 @@ class GameController {
       this._hideJoinOverlay();
       this.startBotGame(10);
     }
-  }
-
-  _showSearching(msg) {
-    hide($('lobby'));
-    hide($('postGame'));
-    show($('game'));
-    const stage = $('boardMount');
-    if (stage) stage.innerHTML = '';
-    const thinking = $('thinking');
-    if (thinking) {
-      thinking.hidden = false;
-      const span = thinking.querySelector('span');
-      if (span) span.textContent = msg;
-    }
-  }
-
-  _hideSearching() {
-    const thinking = $('thinking');
-    if (thinking) thinking.hidden = true;
-    this._showGameScreen();
   }
 
   _resetState() {
@@ -1225,17 +1060,6 @@ class GameController {
 
   async _saveAndSync(game) {
     try { store.saveGame(game); } catch (_) {}
-    try {
-      const user = store.ensureUser();
-      await fetch(`${this.apiBase}/games`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(game),
-      });
-    } catch (_) {}
   }
 
   _renderPostGame({ result, ending, oldRating, newRating, delta, analysis, estElo }) {

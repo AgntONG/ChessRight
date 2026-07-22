@@ -7,15 +7,11 @@ ChessRight is a small project and contributions are welcome. The codebase is int
 Follow the [quick start in the README](../README.md#quick-start-local-dev):
 
 ```bash
-# Terminal 1 — frontend
-cd web && python -m http.server 8785
-
-# Terminal 2 — backend
-cd worker && npm install && npx wrangler d1 execute chessright --file=./schema.sql --local
-npx wrangler dev
+cd web
+python -m http.server 8765
 ```
 
-Open `http://localhost:8785` and you should be playing bot games against local Stockfish inside a minute.
+Open `http://localhost:8765` and you should be playing bot games against local Stockfish inside a minute. To play a P2P game locally, open a second browser session (different profile or private window) and use an invite link.
 
 ## Code style
 
@@ -29,9 +25,9 @@ Open `http://localhost:8785` and you should be playing bot games against local S
 
 There is no test runner wired up as a CI gate (yet); we keep the barrier low instead:
 
-- Every module must pass a syntax check: `node --check path/to/file.js`. Run this before opening a PR.
-- Pure modules (notably `web/scripts/play/accuracy.js` and `worker/src/elo.js`) carry co-located `*.test.js` files. Run them with `node --test path/to/file.test.js`. If you change the math, update or add tests.
-- Integration is validated by hand in the browser: start a bot game, finish a ranked game against a second session, check the post-game report and the profile page.
+- Every module must pass a syntax check: `node --check path/to/file.js`. Run this before opening a PR. The repo root has `npm run check` wired up to cover everything under `web/scripts/`.
+- Pure modules (notably `web/scripts/play/accuracy.js`, with Glicko-1 math co-located in `store.js`) carry co-located `*.test.js` files. Run them with `node --test path/to/file.test.js`. If you change the math, update or add tests.
+- Integration is validated by hand in the browser: start a bot game, finish a P2P game against a second session, check the post-game report and the profile page.
 
 If your PR touches the rating or accuracy math, please include the numbers you tested against and where they came from (e.g. a known Lichess analysis). See [ACCURACY.md](ACCURACY.md) for the formulas these tests should reflect.
 

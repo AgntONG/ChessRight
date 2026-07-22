@@ -1,8 +1,8 @@
 # Accuracy and rating math
 
-This document specifies the math behind ChessRight's two rating signals: the per-game accuracy / estimated strength shown in the post-game report, and the server-side Glicko-1 live rating shown on your profile. It exists so the numbers on screen are not magic — they have a derivation, a rationale, and known limitations.
+This document specifies the math behind ChessRight's two rating signals: the per-game accuracy / estimated strength shown in the post-game report, and the Glicko-1 live rating shown on your profile. It exists so the numbers on screen are not magic — they have a derivation, a rationale, and known limitations.
 
-Implementations live in two pure files: `web/scripts/play/accuracy.js` (client-side, per-game) and `worker/src/elo.js` (server-side, cross-game). Those files are the source of truth for the constants; this document explains why those constants were chosen and what the formulas mean.
+Implementations live in two pure places: `web/scripts/play/accuracy.js` (per-game, accuracy + estimated ELO) and the Glicko-1 section of `web/scripts/play/store.js` (cross-game rating). Those files are the source of truth for the constants; this document explains why those constants were chosen and what the formulas mean.
 
 ## 1. Why centipawn loss is not enough
 
@@ -119,7 +119,7 @@ ChessRight shows two numbers because they answer different questions.
 
 | Signal | Source | Converges | Reflects | Authority |
 |---|---|---|---|---|
-| **Live rating** | Glicko-1 over game results | Slowly, over many games | Did you win, lose, or draw? | Server-authoritative |
+| **Live rating** | Glicko-1 over game results | Slowly, over many games | Did you win, lose, or draw? | Computed and stored locally in the browser; not a credential |
 | **Estimated strength** | Win-probability accuracy per game | Immediately, after one game | How well did you play, independent of result? | Computed locally, not trusted for rankings |
 
 Why both? You can play brilliantly and lose — a single tactical shot you missed in an otherwise strong game, or a winning position you blundered at move 40 after outplaying them for 39 moves. Live rating records the loss; estimated strength records the brilliance. Together they tell a fuller story than either alone.
@@ -131,13 +131,15 @@ Why both? You can play brilliantly and lose — a single tactical shot you misse
 
 A player improving fast often sees estimated strength climb weeks before their live rating does. Watching both is more informative than watching either.
 
-## 7. Glicko-1 (server-side rating)
+## 7. Glicko-1 (results rating)
 
 The live rating uses Glicko-1, Mark Glickman's improvement on Elo. The core insight is that a rating is meaningless without an attached uncertainty. A player with 50 rated games at 1800 is meaningfully stronger than a brand-new player provisionally rated 1800.
 
+In the current frontend-only build the rating is computed and stored locally; the math is unchanged from the earlier server-side design and the formulas below are identical.
+
 ### State
 
-Every player has two numbers stored on `users`:
+Every player has two numbers stored in their local profile:
 
 - `rating` — current best estimate (default `1200`)
 - `rating_rd` — rating deviation, the standard-error-like uncertainty (default `350`, the maximum)
@@ -146,7 +148,7 @@ New players start at `1200 ± 350` — essentially "we know nothing beyond 'some
 
 ### RD decay over inactivity
 
-Between games, RD grows toward the cap `RD_MAX = 350`. From `worker/src/elo.js`:
+Between games, RD grows toward the cap `RD_MAX = 350`. From `web/scripts/play/store.js`:
 
 ```
 new_rd = sqrt(rd^2 + c^2 * t)
@@ -170,7 +172,7 @@ new_rd     = sqrt(1 / (1/rd^2 + 1/d^2))
 
 These are Glickman's published equations (see *A Comprehensive Guide to Chess Ratings*, Glickman 2013, on his BU page). Both sides' updates are symmetric: each player sees the other as the opponent and runs the same formula with their own `s` (1 for one side, 0 for the other, 0.5 each for a draw).
 
-Implementation notes from `worker/src/elo.js`:
+Implementation notes from `web/scripts/play/store.js`:
 
 - `RD_MIN = 30`. After many games RD would otherwise collapse toward zero, making the rating nearly unchangeable. We floor it at 30 so ratings stay responsive even for very active players.
 - `RD_MAX = 350`. Ceiling matches Glickman's recommended maximum.
@@ -187,9 +189,9 @@ Implementation notes from `worker/src/elo.js`:
 Both rating computations are deliberately isolated:
 
 - **`web/scripts/play/accuracy.js`** — pure functions: `winProbability(cp)`, `moveAccuracy(wBefore, wAfter)`, `gameAccuracy(moves)`, `estimatedElo(accuracy)`. No DOM, no I/O, no dependencies. Directly unit-testable with `node --test` and a handful of edge cases.
-- **`worker/src/elo.js`** — pure functions for the math (`decayRd`, `glickoUpdate`, `scoreFromResult`) plus `applyResultToUser`, the single D1-writing entry point that the Worker calls after accepting a submitted game.
+- **`web/scripts/play/store.js`** — pure functions for the Glicko-1 math (`decayRd`, `glickoUpdate`) embedded in the persistence module, plus `store.updateRating()`, the entry point the game controller calls after a finished game to refresh the local profile.
 
-The split keeps the math testable and the I/O boring. If we ever move analysis server-side (e.g. to support anti-cheat or recompute on deeper Stockfish), only `accuracy.js` needs to run inside the Worker — its purity makes that trivial.
+The split keeps the math testable and the I/O boring. If analysis ever moves server-side (e.g. to support anti-cheat or recompute on deeper Stockfish), only `accuracy.js` needs to run there — its purity makes that trivial.
 
 ## 9. Limitations and future work
 
@@ -207,6 +209,6 @@ Planned future work, in rough priority order:
 1. Weighted averaging by position importance (move closer to 50% win probability counts more).
 2. Time-aware per-move weighting.
 3. Per-time-control estimated-strength curves.
-4. Optional server-side re-analysis at higher depth for finished games.
+4. Optional deeper re-analysis for finished games.
 
-If you want to dig into the source, start at `web/scripts/play/accuracy.js` for the per-game math and `worker/src/elo.js` for the cross-game math. The two files are short, the functions are named after the formulas above, and the constants are the same ones cited here.
+If you want to dig into the source, start at `web/scripts/play/accuracy.js` for the per-game math and `web/scripts/play/store.js` for the cross-game rating math. The functions are named after the formulas above, and the constants are the same ones cited here.

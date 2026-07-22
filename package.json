@@ -3,14 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ChessRight — play chess, find brilliancies. Frontend (Cloudflare Pages) + Worker backend.",
+  "description": "ChessRight — free, frontend-only chess website. Stockfish in the browser, P2P multiplayer, instant post-game analysis.",
   "license": "MIT",
-  "workspaces": [
-    "worker"
-  ],
   "scripts": {
     "dev:web": "cd web && python -m http.server 8765",
-    "dev:worker": "cd worker && npx wrangler dev",
-    "check": "node --check web/scripts/*.js web/scripts/play/*.js worker/src/*.js"
+    "check": "node --check web/scripts/landing.js web/scripts/ui.js web/scripts/account.js web/scripts/play/main.js web/scripts/play/board.js web/scripts/play/engine.js web/scripts/play/accuracy.js web/scripts/play/store.js web/scripts/play/net.js web/scripts/play/clock.js"
   }
 }

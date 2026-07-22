@@ -1,12 +1,9 @@
 import Peer from 'https://esm.sh/peerjs@1.5.4?bundle';
 
-const DEFAULT_API_BASE = '/api';
-const DEFAULT_TIMECONTROL = '10+5';
-const QUEUE_TIMEOUT_MS = 120000;
 const PEER_READY_TIMEOUT_MS = 20000;
 const CONNECT_TIMEOUT_MS = 15000;
 const HELLO_TIMEOUT_MS = 15000;
-const HEALTH_TIMEOUT_MS = 5000;
+const PEER_WAIT_TIMEOUT_MS = 120000;
 const LATENCY_INTERVAL_MS = 5000;
 const CONNECT_RETRY_ATTEMPTS = 3;
 const CONNECT_RETRY_DELAY_MS = 2000;
@@ -137,15 +134,6 @@ function isRetryablePeerError(type) {
   );
 }
 
-export class QueueError extends Error {
-  constructor(message, { status, body } = {}) {
-    super(message);
-    this.name = 'QueueError';
-    this.status = status;
-    this.body = body;
-  }
-}
-
 export class PeerError extends Error {
   constructor(message, { code } = {}) {
     super(message);
@@ -159,259 +147,6 @@ export class ConnectionError extends Error {
     super(message);
     this.name = 'ConnectionError';
     this.reason = reason;
-  }
-}
-
-async function readErrorBody(res) {
-  try {
-    const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return await res.json();
-    return await res.text();
-  } catch (_) {
-    return null;
-  }
-}
-
-async function throwIfNotOk(res, defaultMessage) {
-  if (res.ok) return;
-  const body = await readErrorBody(res);
-  const message =
-    (body && typeof body === 'object' && (body.error || body.message)) ||
-    (typeof body === 'string' && body) ||
-    `${defaultMessage} (HTTP ${res.status})`;
-  throw new QueueError(message, { status: res.status, body });
-}
-
-export class MatchClient {
-  constructor({ apiBase, token, userId, rating } = {}) {
-    this.apiBase = (apiBase || DEFAULT_API_BASE).replace(/\/$/, '');
-    this.token = token || null;
-    this.userId = userId || null;
-    this.rating = typeof rating === 'number' ? rating : null;
-    this._currentTicketId = null;
-    this._aborted = false;
-  }
-
-  _headers(extra = {}) {
-    const h = { Accept: 'application/json', ...extra };
-    if (this.token) h['Authorization'] = `Bearer ${this.token}`;
-    return h;
-  }
-
-  async _request(method, path, { payload, signal, allowEmpty = false } = {}) {
-    const init = {
-      method,
-      headers: this._headers(
-        payload !== undefined ? { 'Content-Type': 'application/json' } : {}
-      ),
-      signal,
-    };
-    if (payload !== undefined) init.body = JSON.stringify(payload);
-
-    let res;
-    try {
-      res = await fetch(`${this.apiBase}${path}`, init);
-    } catch (err) {
-      if (err && err.name === 'AbortError') throw err;
-      throw new QueueError(`network error during ${method} ${path}: ${err.message}`, {
-        cause: err,
-      });
-    }
-    await throwIfNotOk(res, `request failed: ${method} ${path}`);
-    if (allowEmpty) {
-      const text = await res.text();
-      if (!text) return null;
-      try {
-        return JSON.parse(text);
-      } catch (_) {
-        return null;
-      }
-    }
-    return res.json();
-  }
-
-  _postJson(path, payload, opts) {
-    return this._request('POST', path, { payload, ...opts });
-  }
-
-  _getJson(path, opts) {
-    return this._request('GET', path, opts);
-  }
-
-  _delete(path, opts) {
-    return this._request('DELETE', path, { allowEmpty: true, ...opts });
-  }
-
-  async isServerAvailable() {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-    try {
-      const res = await fetch(`${this.apiBase}/health`, {
-        method: 'GET',
-        headers: this._headers(),
-        signal: controller.signal,
-        cache: 'no-store',
-      });
-      return res.ok;
-    } catch (_) {
-      return false;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  _normalizeMatchGame(serverView, fallbackHandle) {
-    if (!serverView) return null;
-    const me = serverView.me || {};
-    const opp = serverView.opponent || {};
-    const myColor = me.color || null;
-    return {
-      gameId: serverView.gameId,
-      myColor,
-      timeControl: serverView.timeControl || null,
-      me: {
-        userId: me.userId || null,
-        handle: me.handle || fallbackHandle || null,
-        rating: typeof me.rating === 'number' ? me.rating : null,
-        peerId: me.peerId || null,
-        color: myColor,
-      },
-      opponent: {
-        userId: opp.userId || null,
-        handle: opp.handle || null,
-        rating: typeof opp.rating === 'number' ? opp.rating : null,
-        peerId: opp.peerId || null,
-        color: opp.color || null,
-      },
-    };
-  }
-
-  async findMatch({ timeControl = DEFAULT_TIMECONTROL, onStatus, signal } = {}) {
-    const status = typeof onStatus === 'function' ? onStatus : () => {};
-
-    if (signal && signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
-
-    const myPeerId = generatePeerId();
-    const queuePayload = {
-      peerId: myPeerId,
-      rating: this.rating,
-      timeControl,
-      ...(this.userId ? { userId: this.userId } : {}),
-    };
-
-    let queueRes;
-    try {
-      queueRes = await this._postJson('/match/queue', queuePayload, { signal });
-    } catch (err) {
-      if (err && err.name === 'AbortError') throw err;
-      status('error', { error: err });
-      throw err instanceof QueueError
-        ? err
-        : new QueueError(`failed to join queue: ${err.message}`, { cause: err });
-    }
-
-    const ticketId = queueRes.ticketId;
-    if (!ticketId) {
-      throw new QueueError('server returned no ticketId', { body: queueRes });
-    }
-    this._currentTicketId = ticketId;
-
-    if (queueRes.status === 'matched' && queueRes.game) {
-      const game = this._normalizeMatchGame(queueRes.game);
-      if (game) {
-        this._currentTicketId = null;
-        status('queued', { ticketId, myPeerId });
-        status('matched', game);
-        return game;
-      }
-    }
-
-    status('queued', { ticketId, myPeerId });
-
-    const startTime = Date.now();
-    const localAbort = new AbortController();
-    const onExternalAbort = () => {
-      this._aborted = true;
-      localAbort.abort();
-    };
-    if (signal) {
-      if (signal.aborted) onExternalAbort();
-      else signal.addEventListener('abort', onExternalAbort, { once: true });
-    }
-
-    const pollTimer = setInterval(() => {
-      if (Date.now() - startTime >= QUEUE_TIMEOUT_MS) localAbort.abort();
-    }, 1000);
-
-    try {
-      while (Date.now() - startTime < QUEUE_TIMEOUT_MS) {
-        if (this._aborted || (signal && signal.aborted)) {
-          await this._safeLeave(ticketId);
-          throw new DOMException('Aborted', 'AbortError');
-        }
-
-        let data;
-        try {
-          data = await this._getJson(
-            `/match/poll/${encodeURIComponent(ticketId)}`,
-            { signal: localAbort.signal }
-          );
-        } catch (err) {
-          if (err && err.name === 'AbortError') {
-            if (this._aborted || (signal && signal.aborted)) {
-              await this._safeLeave(ticketId);
-              throw new DOMException('Aborted', 'AbortError');
-            }
-            break;
-          }
-          status('error', { error: err });
-          throw err instanceof QueueError
-            ? err
-            : new QueueError(`polling failed: ${err.message}`, { cause: err });
-        }
-
-        if (!data || data.status === 'expired') {
-          throw new QueueError('ticket expired or removed from queue', {
-            body: data,
-          });
-        }
-
-        if (data.status === 'matched' && data.game) {
-          const game = this._normalizeMatchGame(data.game);
-          if (game) {
-            this._currentTicketId = null;
-            status('matched', game);
-            return game;
-          }
-        }
-
-        status('searching', { waited: Date.now() - startTime });
-      }
-
-      status('timeout');
-      await this._safeLeave(ticketId);
-      throw new QueueError('queue timeout');
-    } finally {
-      clearInterval(pollTimer);
-      if (signal) signal.removeEventListener('abort', onExternalAbort);
-      this._aborted = false;
-    }
-  }
-
-  async _safeLeave(ticketId) {
-    if (!ticketId) return;
-    try {
-      await this._delete(`/match/queue/${encodeURIComponent(ticketId)}`);
-    } catch (_) {}
-  }
-
-  async leaveQueue(ticketId) {
-    const id = ticketId || this._currentTicketId;
-    if (!id) return;
-    this._currentTicketId = null;
-    await this._safeLeave(id);
   }
 }
 
@@ -787,7 +522,7 @@ export class PeerConnection {
 
         const safety = setTimeout(() => {
           clearInterval(checkOpen);
-        }, QUEUE_TIMEOUT_MS);
+        }, PEER_WAIT_TIMEOUT_MS);
         this._waitCleanup = () => {
           clearTimeout(safety);
           clearInterval(checkOpen);
@@ -1388,11 +1123,9 @@ export class InviteGuest {
 }
 
 export default {
-  MatchClient,
   PeerConnection,
   InviteHost,
   InviteGuest,
-  QueueError,
   PeerError,
   ConnectionError,
   parseInviteFromUrl,

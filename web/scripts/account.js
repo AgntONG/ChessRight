@@ -452,32 +452,9 @@ class AccountPage {
     const target = document.getElementById('leaderboard');
     if (!target) return;
     target.innerHTML = '';
-    for (let i = 0; i < 10; i++) target.appendChild(this._lbSkelRow());
 
-    let rows = null;
-    let source = 'remote';
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 4500);
-      const res = await fetch('/api/leaderboard', { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (data && Array.isArray(data.rows) ? data.rows : null);
-      if (!list) throw new Error('bad shape');
-      rows = list.slice(0, 100).map((r, i) => ({
-        rank: r.rank != null ? r.rank : i + 1,
-        handle: r.handle || r.name || 'Anonymous',
-        rating: typeof r.rating === 'number' ? r.rating : 0,
-        games: r.gamesPlayed != null ? r.gamesPlayed : (r.games || 0),
-        isMe: r.id != null && this.user && r.id === this.user.id,
-      }));
-    } catch (e) {
-      source = 'local';
-      rows = this._localLeaderboard();
-    }
-
-    this.renderLeaderboard(target, rows, source);
+    const rows = this._localLeaderboard();
+    this.renderLeaderboard(target, rows, 'local');
   }
 
   _localLeaderboard() {
@@ -558,7 +535,7 @@ class AccountPage {
 
     if (source === 'local') {
       const note = el('div', 'lb-note');
-      note.textContent = 'Showing your circle (opponents you have played). The global leaderboard requires the ChessRight Worker to be deployed.';
+      note.textContent = 'Showing opponents you have played. Play more games to fill out your circle.';
       target.parentNode.insertBefore(note, target.nextSibling);
     }
   }

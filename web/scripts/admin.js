@@ -161,11 +161,6 @@ class AdminPanel {
 
   async init() {
     this._cacheDom();
-    this._wireLogin();
-    this._wireTabs();
-    this._wireToolbar();
-    this._wirePrankPanel();
-    this._wireVisibility();
 
     if (this.token) {
       try {
@@ -173,6 +168,11 @@ class AdminPanel {
           headers: { 'X-Admin-Token': this.token },
         });
         if (check.ok) {
+          try { this._wireLogin(); } catch (_) {}
+          try { this._wireTabs(); } catch (_) {}
+          try { this._wireToolbar(); } catch (_) {}
+          try { this._wirePrankPanel(); } catch (_) {}
+          try { this._wireVisibility(); } catch (_) {}
           this.showDashboard();
           return;
         }
@@ -188,12 +188,18 @@ class AdminPanel {
         if (data.authorized && data.token) {
           this.token = data.token;
           sessionStorage.setItem(TOKEN_KEY, this.token);
+          try { this._wireLogin(); } catch (_) {}
+          try { this._wireTabs(); } catch (_) {}
+          try { this._wireToolbar(); } catch (_) {}
+          try { this._wirePrankPanel(); } catch (_) {}
+          try { this._wireVisibility(); } catch (_) {}
           this.showDashboard();
           return;
         }
       }
     } catch (_) {}
 
+    try { this._wireLogin(); } catch (_) {}
     this.showLogin();
   }
 

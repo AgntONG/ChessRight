@@ -150,6 +150,40 @@ export const store = {
     return merged;
   },
 
+  isServerToken(token) {
+    if (!token || typeof token !== 'string' || !token.startsWith('tok_')) return false;
+    const rest = token.slice(4);
+    const parts = rest.split('.');
+    return parts.length === 4 && parts.every((p) => p.length > 0);
+  },
+
+  async ensureServerUser() {
+    const u = readUser() || this.ensureUser();
+    if (this.isServerToken(u.token)) return u;
+    try {
+      const auth = await apiPost('/auth/anonymous', {
+        id: u.id,
+        userId: u.id,
+        token: u.token,
+        handle: u.handle
+      });
+      if (auth && auth.userId && auth.token) {
+        this.setUser({
+          id: auth.userId,
+          token: auth.token,
+          serverId: auth.userId,
+          rating: typeof auth.rating === 'number' ? auth.rating : u.rating,
+          lastSync: Date.now(),
+          syncState: 'synced',
+          syncError: null
+        });
+      }
+    } catch (err) {
+      throw new Error('Could not authenticate with server: ' + (err && err.message ? err.message : err));
+    }
+    return readUser();
+  },
+
   setHandle(handle) {
     const trimmed = String(handle || '').trim().slice(0, 32);
     if (!trimmed) return readUser();

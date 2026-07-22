@@ -264,7 +264,11 @@ export class Board {
   _beginDrag(sq, pcEl, e) {
     const move = this._movesForSquare(sq);
     if (!move.length) return;
-    pcEl.setPointerCapture(e.pointerId);
+    // setPointerCapture can throw if the pointer is no longer active (e.g. the
+    // finger/mouse was released between pointerdown and this synchronous call,
+    // or under synthetic/test events). Capture is an optimisation for smooth
+    // dragging, not a correctness requirement, so swallow the failure.
+    try { pcEl.setPointerCapture(e.pointerId); } catch (_) {}
     pcEl.classList.add('dragging', 'interact');
 
     const rect = this.mountEl.getBoundingClientRect();
@@ -285,7 +289,7 @@ export class Board {
       pcEl.style.top = ((y / rect.height) - sizePct / 2) * 100 + '%';
     };
     const onUp = (ev) => {
-      pcEl.releasePointerCapture(ev.pointerId);
+      try { pcEl.releasePointerCapture(ev.pointerId); } catch (_) {}
       pcEl.removeEventListener('pointermove', onMove);
       pcEl.removeEventListener('pointerup', onUp);
       pcEl.removeEventListener('pointercancel', onUp);
@@ -301,7 +305,12 @@ export class Board {
           this._clearSelection();
           this._attemptMove(sq, target, true);
         }
+      } else if (target === sq) {
+        // Released on the source square: treat as a click-to-select, not a
+        // failed drag. Keep the selection so the user can click a target.
+        this._placePiece(pcEl, sq);
       } else {
+        // Dragged to an illegal square: snap back and clear the selection.
         this._placePiece(pcEl, sq);
         this._clearSelection();
       }

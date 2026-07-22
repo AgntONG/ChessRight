@@ -1,20 +1,32 @@
-const DEFAULT_WORKER_URL = '../../assets/stockfish/stockfish-nnue-16-single.js';
+const DEFAULT_WORKER_URL = 'assets/stockfish/stockfish-nnue-16-single.js';
 const DEFAULT_CDN_URL = 'https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js';
 
-const LICHESS_LEVELS = [
-  { movetime: 50,   skill: -9, depth: 5  },
-  { movetime: 100,  skill: -5, depth: 5  },
-  { movetime: 150,  skill: -1, depth: 5  },
-  { movetime: 200,  skill:  3, depth: 5  },
-  { movetime: 300,  skill:  7, depth: 5  },
-  { movetime: 400,  skill: 11, depth: 8  },
-  { movetime: 500,  skill: 16, depth: 13 },
-  { movetime: 1000, skill: 20, depth: 22 },
+const LEVELS = [
+  { movetime: 50,   skill:  0, depth: 5  },
+  { movetime: 80,   skill:  1, depth: 5  },
+  { movetime: 110,  skill:  2, depth: 5  },
+  { movetime: 140,  skill:  3, depth: 5  },
+  { movetime: 170,  skill:  4, depth: 5  },
+  { movetime: 200,  skill:  5, depth: 6  },
+  { movetime: 230,  skill:  6, depth: 6  },
+  { movetime: 260,  skill:  7, depth: 7  },
+  { movetime: 300,  skill:  8, depth: 7  },
+  { movetime: 350,  skill:  9, depth: 8  },
+  { movetime: 400,  skill: 10, depth: 9  },
+  { movetime: 450,  skill: 11, depth: 10 },
+  { movetime: 500,  skill: 12, depth: 11 },
+  { movetime: 600,  skill: 13, depth: 12 },
+  { movetime: 700,  skill: 14, depth: 13 },
+  { movetime: 800,  skill: 15, depth: 14 },
+  { movetime: 900,  skill: 16, depth: 15 },
+  { movetime: 1000, skill: 17, depth: 16 },
+  { movetime: 1200, skill: 19, depth: 18 },
+  { movetime: 1500, skill: 20, depth: 20 },
 ];
 
 function levelConfig(level) {
-  const idx = Math.max(0, Math.min(LICHESS_LEVELS.length - 1, Math.round(level) - 1));
-  return LICHESS_LEVELS[idx];
+  const idx = Math.max(0, Math.min(LEVELS.length - 1, Math.round(level) - 1));
+  return LEVELS[idx];
 }
 
 function mateToCp(mate) {
@@ -67,7 +79,8 @@ export class Engine {
     this.worker = null;
     this.readyPromise = null;
     this.engineReady = false;
-    this.level = 8;
+    this.level = 20;
+    this.nnueEnabled = false;
 
     this.commandQueue = Promise.resolve();
     this.pendingReady = null;
@@ -194,6 +207,14 @@ export class Engine {
       return;
     }
 
+    if (this.nnueProbe) {
+      if (/Load eval file success/i.test(line)) this.nnueEnabled = true;
+      if (/Failed to download eval file/i.test(line)) {
+        this.nnueEnabled = false;
+        this._nnueFailed = true;
+      }
+    }
+
     if (line === 'uciok') return;
 
     if (line.startsWith('info')) {
@@ -230,7 +251,7 @@ export class Engine {
     this.worker.postMessage(command);
   }
 
-  async _sendReady() {
+  async _sendReady({ timeoutMs = 5000 } = {}) {
     if (!this.worker) throw new Error('engine not ready');
     if (this.pendingReady) await this.pendingReady.promise;
 
@@ -241,7 +262,7 @@ export class Engine {
     })();
     this._send('isready');
     const timeout = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('isready timeout')), 5000);
+      setTimeout(() => reject(new Error('isready timeout')), timeoutMs);
     });
     await Promise.race([this.pendingReady.promise, timeout]).catch((err) => {
       if (this.pendingReady) {
@@ -259,9 +280,16 @@ export class Engine {
   }
 
   async _handshake() {
-    this._send('setoption name Hash value 16');
+    this._send('setoption name Hash value 128');
     this._send('setoption name UCI_Chess960 value false');
-    await this._sendReady();
+    this._send('setoption name Use NNUE value true');
+    this.nnueProbe = true;
+    await this._sendReady({ timeoutMs: 60000 });
+    this.nnueProbe = false;
+    if (!this.nnueEnabled) {
+      this._send('setoption name Use NNUE value false');
+      await this._sendReady();
+    }
     this._send('ucinewgame');
     await this._sendReady();
   }
@@ -269,7 +297,7 @@ export class Engine {
   async setLevel(level) {
     return this._enqueue(async () => {
       await this.ready();
-      const clamped = Math.max(1, Math.min(LICHESS_LEVELS.length, level | 0));
+      const clamped = Math.max(1, Math.min(LEVELS.length, level | 0));
       this.level = clamped;
       const cfg = levelConfig(clamped);
       this._send(`setoption name Skill Level value ${cfg.skill}`);
@@ -354,6 +382,19 @@ export class Engine {
     return this._enqueue(() => this._startSearch({ fen, moves, depth, movetime, onInfo }));
   }
 
+  async deepAnalyze({ fen, moves, depth = 22, movetime = 4000, onInfo } = {}) {
+    await this.ready();
+    const prevLevel = this.level;
+    this._send('setoption name Skill Level value 20');
+    await this._sendReady();
+    const result = await this._enqueue(() => this._startSearch({ fen, moves, depth, movetime, onInfo }));
+    this._send(`setoption name Skill Level value ${levelConfig(prevLevel).skill}`);
+    try { await this._sendReady(); } catch (_) {}
+    return result;
+  }
+
+  isNnueEnabled() { return !!this.nnueEnabled; }
+
   stop() {
     if (this.worker && this.currentSearch) this._send('stop');
   }
@@ -380,4 +421,4 @@ export class Engine {
   }
 }
 
-export const LEVELS = LICHESS_LEVELS;
+export { LEVELS };

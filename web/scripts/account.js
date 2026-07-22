@@ -3,9 +3,16 @@ import {
   toast, modal, confirm, formatRating, formatRelativeTime, formatAccuracy, pieceSvg,
 } from './ui.js';
 
-const KEY_USER = 'chessright:user';
 const FALLBACK_OPENINGS = ['Italian Game', 'Sicilian Defense', 'French Defense', "Queen's Gambit", 'Ruy Lopez'];
-const FALLBACK_TCS = ['1+0', '3+2', '5+0', '10+0', '15+10'];
+const FORM_DOT_COUNT = 10;
+const PROVISIONAL_RD = 100;
+const UP_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>';
+const DOWN_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+const CHEV_DOWN = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+const REFRESH_IC = '<svg class="ic-refresh" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+const SPARKLE_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>';
+const KNIGHT_IC = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 22H5v-2h14v2zM13 2v2c4 1 6 4 6 8v3l1 2v2H4v-2l1-2v-2.5c0-1.7.8-3.2 2-4.2L9 9c0-1 .5-2 1.5-2.5L13 2z"/></svg>';
+const INFO_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
 
 function el(tag, className, html) {
   const node = document.createElement(tag);
@@ -23,6 +30,11 @@ function escapeHtml(str) {
 function setText(id, text) {
   const node = document.getElementById(id);
   if (node) node.textContent = text == null ? '' : String(text);
+}
+
+function setHtml(id, html) {
+  const node = document.getElementById(id);
+  if (node) node.innerHTML = html == null ? '' : String(html);
 }
 
 function formatMemberSince(ts) {
@@ -70,18 +82,6 @@ function userRatingAfter(game, fallback) {
   return fallback;
 }
 
-function persistUserHandle(user, newHandle) {
-  const trimmed = String(newHandle || '').trim().slice(0, 32);
-  if (!trimmed) return user;
-  try {
-    const merged = { ...user, handle: trimmed, updatedAt: Date.now() };
-    localStorage.setItem(KEY_USER, JSON.stringify(merged));
-    return merged;
-  } catch (e) {
-    return user;
-  }
-}
-
 function resultChar(result) {
   if (result === 'win') return 'W';
   if (result === 'loss') return 'L';
@@ -101,8 +101,11 @@ class AccountPage {
     this.user = null;
     this.stats = null;
     this.filter = '';
+    this.sort = 'date';
     this.tabsLoaded = { games: false, leaderboard: false, insights: false };
     this._resetConfirming = false;
+    this._syncing = false;
+    this._expandedRow = null;
   }
 
   async init() {
@@ -112,7 +115,8 @@ class AccountPage {
     try {
       this.user = store.ensureUser();
     } catch (e) {
-      this.user = store.ensureUser();
+      console.error('Failed to ensure user', e);
+      this.user = store.getUser() || { handle: 'Guest', rating: 1200, gamesPlayed: 0 };
     }
     this.renderProfile(this.user);
 
@@ -126,12 +130,60 @@ class AccountPage {
     this.setupTabs();
     this.setupProfileActions();
     this.setupGamesToolbar();
+    this.setupLeaderboardToolbar();
     this.tabsLoaded.games = true;
 
     await this.renderGames();
 
     setTimeout(() => this.positionTabUnderline(), 0);
     setTimeout(() => this.positionTabUnderline(), 200);
+
+    this.syncWithServer();
+  }
+
+  async syncWithServer() {
+    if (this._syncing) return;
+    this._syncing = true;
+    this.setSyncState('syncing');
+
+    try {
+      const res = await store.syncToServer();
+      try { this.user = store.getUser() || this.user; } catch (_) {}
+      if (res && res.status === 'synced') {
+        this.setSyncState('synced', res.synced || 0);
+        this.renderProfile(this.user);
+        if (res.synced > 0) {
+          toast({
+            title: 'Synced to server',
+            message: `${res.synced} game${res.synced === 1 ? '' : 's'} uploaded.`,
+            kind: 'good',
+            duration: 3500,
+          });
+        }
+      } else {
+        this.setSyncState('offline', res && res.error);
+      }
+    } catch (err) {
+      this.setSyncState('offline', err && err.message);
+    } finally {
+      this._syncing = false;
+    }
+  }
+
+  setSyncState(state, detail) {
+    const badge = document.getElementById('syncBadge');
+    if (!badge) return;
+    badge.classList.remove('syncing', 'synced', 'offline');
+    badge.classList.add(state);
+    const text = badge.querySelector('.sync-text');
+    if (!text) return;
+    if (state === 'syncing') text.textContent = 'Syncing…';
+    else if (state === 'synced') {
+      const n = typeof detail === 'number' ? detail : 0;
+      text.textContent = n > 0 ? `Synced · ${n} new` : 'Synced';
+    } else {
+      text.textContent = 'Offline · local only';
+    }
   }
 
   bindNav() {
@@ -164,30 +216,135 @@ class AccountPage {
   }
 
   renderProfile(user) {
+    const u = user || {};
     const avatar = document.getElementById('avatar');
     if (avatar) {
-      avatar.innerHTML = pieceSvg('w', 'q');
+      avatar.innerHTML = pieceSvg('w', 'k');
     }
-    setText('handle', user && user.handle ? user.handle : 'Anonymous');
-    setText('memberSince', formatMemberSince(user && user.createdAt));
+    setText('handle', u.handle || 'Anonymous');
+    setText('memberSince', formatMemberSince(u.createdAt));
 
-    const rating = user && typeof user.rating === 'number' ? user.rating : 1200;
-    const rd = user && (user.ratingVolatility != null ? user.ratingVolatility : user.ratingRd);
+    const rating = typeof u.rating === 'number' ? u.rating : 1200;
+    const rd = u.ratingVolatility != null ? u.ratingVolatility : u.ratingRd;
     setText('ratingNum', String(Math.round(rating)));
-    const rdNode = document.getElementById('ratingRd');
-    if (rdNode) {
-      rdNode.textContent = rd != null ? `± ${Math.round(rd)} RD` : '';
+    setText('ratingRd', rd != null ? `± ${Math.round(rd)}` : '');
+
+    const prov = document.getElementById('ratingProv');
+    if (prov) {
+      const isProv = typeof rd === 'number' && rd > PROVISIONAL_RD;
+      prov.hidden = !isProv;
     }
   }
 
   renderStats(stats) {
     const s = stats || {};
     setText('statGames', s.gamesPlayed != null ? s.gamesPlayed : 0);
-    setText('statWins', s.wins != null ? s.wins : 0);
-    setText('statLosses', s.losses != null ? s.losses : 0);
-    setText('statDraws', s.draws != null ? s.draws : 0);
     setText('statAcc', this.formatAvgAccuracy(s));
     setText('statStreak', this.formatStreak(s));
+    this.renderRatioBar(s);
+    this.renderFormDots(s);
+    this.renderAccuracyTrend(s);
+  }
+
+  renderRatioBar(s) {
+    const bar = document.getElementById('ratioBar');
+    const legend = document.getElementById('ratioLegend');
+    if (!bar || !legend) return;
+
+    const w = s.wins || 0;
+    const d = s.draws || 0;
+    const l = s.losses || 0;
+    const total = w + d + l;
+
+    bar.innerHTML = '';
+    if (total === 0) {
+      bar.innerHTML = '<div class="ratio-seg draw" style="flex-grow: 1;"></div>';
+      legend.innerHTML = '<span class="form-empty">No games yet</span>';
+      return;
+    }
+
+    const segs = [
+      { kind: 'win', count: w },
+      { kind: 'draw', count: d },
+      { kind: 'loss', count: l },
+    ].filter((x) => x.count > 0);
+
+    segs.forEach((seg) => {
+      const node = el('div', `ratio-seg ${seg.kind}`);
+      node.style.flexGrow = String(seg.count);
+      node.setAttribute('title', `${seg.kind}: ${seg.count}`);
+      bar.appendChild(node);
+    });
+
+    const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+    legend.innerHTML = '';
+    [['win', w], ['draw', d], ['loss', l]].forEach(([kind, count]) => {
+      const lg = el('span', `lg ${kind}`);
+      lg.innerHTML = `<span class="sw" aria-hidden="true"></span><span>${kind[0].toUpperCase()}${kind.slice(1)}</span><span class="v">${count}</span><span style="opacity:0.6">·</span><span>${pct(count)}%</span>`;
+      legend.appendChild(lg);
+    });
+  }
+
+  renderFormDots(s) {
+    const wrap = document.getElementById('formDots');
+    if (!wrap) return;
+
+    let games = [];
+    try { games = store.getGames(); } catch (e) { games = []; }
+    const recent = games.slice(0, FORM_DOT_COUNT);
+
+    wrap.innerHTML = '';
+    if (recent.length === 0) {
+      wrap.appendChild(el('span', 'form-empty', 'No games yet'));
+      return;
+    }
+
+    recent.forEach((g) => {
+      const dot = el('span', `dot ${g.result || 'draw'}`);
+      dot.setAttribute('title', `${resultChar(g.result)} · ${formatRelativeTime(g.endedAt || g.startedAt)}`);
+      wrap.appendChild(dot);
+    });
+    for (let i = recent.length; i < FORM_DOT_COUNT; i++) {
+      wrap.appendChild(el('span', 'dot pending', ''));
+    }
+  }
+
+  renderAccuracyTrend(s) {
+    const node = document.getElementById('statAccTrend');
+    if (!node) return;
+
+    const overall = s.averageAccuracy;
+    if (typeof overall !== 'number' || !Number.isFinite(overall) || overall <= 0) {
+      node.hidden = true;
+      return;
+    }
+
+    let games = [];
+    try { games = store.getGames(); } catch (e) { games = []; }
+    const last10 = games.slice(0, 10).filter((g) => typeof g.accuracy === 'number' && isFinite(g.accuracy));
+    if (last10.length === 0) {
+      node.hidden = true;
+      return;
+    }
+    const recentAvg = last10.reduce((a, g) => a + g.accuracy, 0) / last10.length;
+    const diff = recentAvg - overall;
+    const abs = Math.abs(diff);
+
+    node.hidden = false;
+    node.classList.remove('up', 'down', 'flat');
+    let arrow = '';
+    if (abs < 0.5) {
+      node.classList.add('flat');
+      arrow = '—';
+    } else if (diff > 0) {
+      node.classList.add('up');
+      arrow = UP_ARROW;
+    } else {
+      node.classList.add('down');
+      arrow = DOWN_ARROW;
+    }
+    node.innerHTML = `${arrow}<span>${abs >= 0.5 ? abs.toFixed(1) + '%' : '0.0%'}</span>`;
+    node.setAttribute('title', `Last 10 avg ${recentAvg.toFixed(1)}% vs overall ${overall.toFixed(1)}%`);
   }
 
   formatAvgAccuracy(s) {
@@ -203,7 +360,7 @@ class AccountPage {
     return `${sign}${c}`;
   }
 
-  async renderGames(filter) {
+  async renderGames(filter, sort) {
     const list = document.getElementById('gamesList');
     if (!list) return;
 
@@ -219,12 +376,15 @@ class AccountPage {
     }
     if (!Array.isArray(games)) games = [];
 
+    games = this._sortGames(games, sort || this.sort);
+
     list.innerHTML = '';
+    this._expandedRow = null;
 
     if (games.length === 0) {
       list.appendChild(el('div', 'empty games-empty', `
-        <h3>No games yet</h3>
-        <p>Play a game to start building your history.</p>
+        <h3>${this.filter ? 'No matching games' : 'No games yet'}</h3>
+        <p>${this.filter ? 'Try a different filter.' : 'Play a game to start building your history.'}</p>
       `));
       return;
     }
@@ -232,6 +392,18 @@ class AccountPage {
     for (const g of games) {
       list.appendChild(this.renderGameRow(g));
     }
+  }
+
+  _sortGames(games, sort) {
+    const arr = games.slice();
+    if (sort === 'accuracy-high') {
+      arr.sort((a, b) => (b.accuracy || -1) - (a.accuracy || -1));
+    } else if (sort === 'accuracy-low') {
+      arr.sort((a, b) => (a.accuracy == null ? 999 : a.accuracy) - (b.accuracy == null ? 999 : b.accuracy));
+    } else {
+      arr.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+    }
+    return arr;
   }
 
   _renderSkeletons(container, count) {
@@ -243,9 +415,12 @@ class AccountPage {
 
   renderGameRow(game) {
     const row = el('div', 'game-row');
-    row.setAttribute('role', 'button');
-    row.setAttribute('tabindex', '0');
     row.dataset.id = game.id || '';
+
+    const head = el('div', 'game-row-head');
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    head.setAttribute('aria-expanded', 'false');
 
     const result = game.result || 'draw';
     const badge = el('div', `result-badge ${result}`, resultChar(result));
@@ -254,7 +429,7 @@ class AccountPage {
     const oppWrap = el('div', 'game-opp');
     oppWrap.appendChild(el('span', 'opp-name', escapeHtml(game.opponentName || 'Unknown')));
     if (game.opponentRating != null) {
-      oppWrap.appendChild(el('span', 'opp-rating', escapeHtml(String(Math.round(game.opponentRating)))));
+      oppWrap.appendChild(el('span', 'opp-rating', `(${Math.round(game.opponentRating)})`));
     }
     if (game.opponentKind) {
       oppWrap.appendChild(el('span', 'opp-kind', escapeHtml(game.opponentKind)));
@@ -267,7 +442,7 @@ class AccountPage {
       sub.appendChild(el('span', 'opening', escapeHtml(opening)));
       sub.appendChild(el('span', 'dot', '·'));
     }
-    sub.appendChild(el('span', null, `${moveCount(game)} moves`));
+    sub.appendChild(el('span', 'moves', `${moveCount(game)} moves`));
     const tc = timeControl(game);
     if (tc) {
       sub.appendChild(el('span', 'dot', '·'));
@@ -278,74 +453,77 @@ class AccountPage {
     const accStat = el('div', 'game-stat');
     accStat.appendChild(el('span', `stat-v acc ${accuracyClass(game.accuracy)}`, formatAccuracy(game.accuracy)));
     accStat.appendChild(el('span', 'stat-k', 'accuracy'));
-    const durStat = el('div', 'game-stat');
-    durStat.appendChild(el('span', 'stat-v', formatDuration(game.durationMs)));
-    durStat.appendChild(el('span', 'stat-k', 'duration'));
     const dateStat = el('div', 'game-stat date');
     const ts = game.endedAt != null ? game.endedAt : game.startedAt;
     dateStat.appendChild(el('span', 'stat-v', formatRelativeTime(ts)));
     dateStat.appendChild(el('span', 'stat-k', 'played'));
 
-    const view = el('div', 'game-view', 'View →');
+    const chev = el('span', null, CHEV_DOWN);
 
-    row.appendChild(badge);
-    row.appendChild(main);
-    row.appendChild(accStat);
-    row.appendChild(durStat);
-    row.appendChild(dateStat);
-    row.appendChild(view);
+    head.appendChild(badge);
+    head.appendChild(main);
+    head.appendChild(accStat);
+    head.appendChild(dateStat);
+    head.appendChild(chev);
 
-    const open = () => this.openGameModal(game);
-    row.addEventListener('click', open);
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    const statsMobile = el('div', 'stats-mobile');
+    statsMobile.style.display = 'none';
+    head.appendChild(statsMobile);
+
+    const detail = el('div', 'game-detail');
+    detail.appendChild(this._renderGameDetailInner(game));
+    row.appendChild(head);
+    row.appendChild(detail);
+
+    const toggle = () => this._toggleRow(row, head);
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
 
     return row;
   }
 
-  async openGameModal(game) {
-    const body = document.createElement('div');
-    const meta = document.createElement('p');
-    const opp = escapeHtml(game.opponentName || 'Unknown');
-    const you = this.user && this.user.handle ? escapeHtml(this.user.handle) : 'You';
+  _renderGameDetailInner(game) {
+    const inner = el('div', 'game-detail-inner');
+
+    const you = this.user && this.user.handle ? this.user.handle : 'You';
+    const opp = game.opponentName || 'Unknown';
     const white = game.color === 'b' ? opp : you;
     const black = game.color === 'b' ? you : opp;
-    meta.innerHTML = `<strong>${white}</strong> (White) vs <strong>${black}</strong> (Black) — result: ${escapeHtml((game.result || 'draw').toUpperCase())}`;
-    body.appendChild(meta);
 
-    const detailLines = [];
-    if (openingName(game)) detailLines.push(`Opening: ${openingName(game)}`);
-    detailLines.push(`Moves: ${moveCount(game)}`);
-    if (game.accuracy != null) detailLines.push(`Accuracy: ${formatAccuracy(game.accuracy)}`);
-    if (game.durationMs != null) detailLines.push(`Duration: ${formatDuration(game.durationMs)}`);
-    if (timeControl(game)) detailLines.push(`Time control: ${timeControl(game)}`);
-    if (detailLines.length) {
-      const d = document.createElement('p');
-      d.textContent = detailLines.join(' · ');
-      body.appendChild(d);
-    }
+    const meta = el('div', 'detail-meta');
+    const kv = (k, v) => {
+      const wrap = el('span', 'kv');
+      wrap.appendChild(el('span', 'k', k));
+      wrap.appendChild(el('span', null, v));
+      return wrap;
+    };
+    meta.appendChild(kv('white', escapeHtml(white)));
+    meta.appendChild(kv('black', escapeHtml(black)));
+    meta.appendChild(kv('result', escapeHtml((game.result || 'draw').toUpperCase())));
+    if (openingName(game)) meta.appendChild(kv('opening', escapeHtml(openingName(game))));
+    meta.appendChild(kv('moves', String(moveCount(game))));
+    if (game.accuracy != null) meta.appendChild(kv('acc', formatAccuracy(game.accuracy)));
+    if (game.durationMs != null) meta.appendChild(kv('time', formatDuration(game.durationMs)));
+    if (timeControl(game)) meta.appendChild(kv('tc', escapeHtml(timeControl(game))));
+    inner.appendChild(meta);
 
     const pgn = game.pgn || '(no PGN stored for this game)';
-    body.appendChild(el('pre', null, pgn));
+    inner.appendChild(el('pre', 'detail-pgn', escapeHtml(pgn)));
 
-    const result = await modal({
-      title: 'Game replay',
-      body,
-      wide: true,
-      actions: [
-        { label: 'Close', value: 'close', kind: 'ghost' },
-        { label: 'Load in board', value: 'board', kind: 'primary' },
-      ],
-    });
+    return inner;
+  }
 
-    if (result === 'board') {
-      toast({
-        title: 'Board load coming soon',
-        message: 'PGN replay will open in the play view once it ships.',
-        kind: 'info',
-      });
+  _toggleRow(row, head) {
+    if (this._expandedRow && this._expandedRow !== row) {
+      this._expandedRow.classList.remove('expanded');
+      const eh = this._expandedRow.querySelector('.game-row-head');
+      if (eh) { eh.setAttribute('aria-expanded', 'false'); }
     }
+    const isOpen = row.classList.toggle('expanded');
+    head.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    this._expandedRow = isOpen ? row : null;
   }
 
   setupGamesToolbar() {
@@ -353,7 +531,14 @@ class AccountPage {
     if (filter) {
       filter.addEventListener('change', () => {
         this.filter = filter.value;
-        this.renderGames(this.filter);
+        this.renderGames(this.filter, this.sort);
+      });
+    }
+    const sortSel = document.getElementById('sortBy');
+    if (sortSel) {
+      sortSel.addEventListener('change', () => {
+        this.sort = sortSel.value;
+        this.renderGames(this.filter, this.sort);
       });
     }
     const exportBtn = document.getElementById('exportBtn');
@@ -448,20 +633,84 @@ class AccountPage {
     }
   }
 
-  async loadLeaderboard() {
+  setupLeaderboardToolbar() {
+    const refresh = document.getElementById('lbRefresh');
+    if (refresh) {
+      refresh.addEventListener('click', () => this.loadLeaderboard(true));
+    }
+  }
+
+  async loadLeaderboard(force) {
     const target = document.getElementById('leaderboard');
     if (!target) return;
-    target.innerHTML = '';
 
-    const rows = this._localLeaderboard();
-    this.renderLeaderboard(target, rows, 'local');
+    const banner = document.getElementById('lbRankBanner');
+    this._renderLbSkeleton(target);
+
+    let serverRows = null;
+    if (this.user && (this.user.syncState === 'synced' || force)) {
+      try {
+        serverRows = await store.fetchLeaderboard(100);
+      } catch (e) {
+        serverRows = null;
+      }
+    }
+
+    if (serverRows && serverRows.length > 0) {
+      this._renderRankBanner(banner, serverRows, true);
+      this.renderLeaderboard(target, serverRows, 'server');
+    } else {
+      const rows = this._localLeaderboard();
+      this._renderRankBanner(banner, rows, false);
+      this.renderLeaderboard(target, rows, 'local');
+    }
+  }
+
+  _renderLbSkeleton(container) {
+    container.innerHTML = '';
+    const header = el('div', 'lb-header');
+    header.appendChild(el('span', 'col-rank', 'Rank'));
+    header.appendChild(el('span', 'col-handle', 'Handle'));
+    header.appendChild(el('span', 'col-rating', 'Rating'));
+    header.appendChild(el('span', 'col-games', 'Games'));
+    container.appendChild(header);
+    for (let i = 0; i < 6; i++) {
+      const row = el('div', 'lb-skel-row');
+      row.innerHTML = '<div class="s skeleton" style="width:30px;"></div><div class="s skeleton" style="width:60%;"></div><div class="s skeleton" style="width:50px;"></div><div class="s skeleton" style="width:30px;"></div>';
+      container.appendChild(row);
+    }
+  }
+
+  _renderRankBanner(banner, rows, isServer) {
+    if (!banner) return;
+    const myId = this.user && (this.user.serverId || this.user.id);
+    const games = (this.stats && this.stats.gamesPlayed) || 0;
+
+    if (games < 5) {
+      banner.hidden = false;
+      banner.classList.remove('off');
+      banner.classList.add('off');
+      banner.innerHTML = `${INFO_IC}<span class="lbl">Play <strong style="color:var(--ink);">${5 - games} more</strong> to enter the leaderboard</span>`;
+      return;
+    }
+
+    const me = rows.find((r) => r.isMe || (myId && r.userId === myId) || (r.handle === this.user.handle));
+    if (me && typeof me.rank === 'number' && me.rank > 0) {
+      banner.hidden = false;
+      banner.classList.remove('off');
+      banner.innerHTML = `<span class="lbl">Your rank</span><span class="rk">#${me.rank}</span><span class="lbl" style="opacity:0.6;">of ${rows.length}</span>`;
+    } else {
+      banner.hidden = false;
+      banner.classList.add('off');
+      banner.innerHTML = `${INFO_IC}<span class="lbl">Not ranked yet — keep playing to climb</span>`;
+    }
   }
 
   _localLeaderboard() {
     const me = {
       rank: 1, handle: (this.user && this.user.handle) || 'You',
       rating: Math.round((this.user && this.user.rating) || 1200),
-      games: this.stats && this.stats.gamesPlayed || 0,
+      games: (this.stats && this.stats.gamesPlayed) || 0,
       isMe: true,
     };
 
@@ -488,18 +737,6 @@ class AccountPage {
     return circle;
   }
 
-  _lbSkelRow() {
-    const row = el('div', 'lb-row');
-    row.appendChild(el('div', 'lb-rank skeleton', ''));
-    row.appendChild(el('div', 'lb-handle skeleton', ''));
-    row.appendChild(el('div', 'lb-rating skeleton', ''));
-    row.appendChild(el('div', 'lb-games skeleton', ''));
-    for (const c of [row.querySelector('.lb-rank'), row.querySelector('.lb-handle'), row.querySelector('.lb-rating'), row.querySelector('.lb-games')]) {
-      if (c) { c.style.height = '14px'; c.style.width = c.classList.contains('lb-handle') ? '70%' : '40px'; }
-    }
-    return row;
-  }
-
   renderLeaderboard(target, rows, source) {
     target.innerHTML = '';
 
@@ -518,14 +755,17 @@ class AccountPage {
       return;
     }
 
+    const myId = this.user && (this.user.serverId || this.user.id);
+    const myHandle = this.user && this.user.handle;
+
     rows.slice(0, 100).forEach((r) => {
-      const row = el('div', `lb-row${r.isMe ? ' me' : ''}`);
+      const isMe = r.isMe || (myId && r.userId === myId) || (myHandle && r.handle === myHandle);
+      const row = el('div', `lb-row${isMe ? ' me' : ''}`);
       row.appendChild(el('span', `lb-rank${r.rank <= 3 ? ' top' : ''}`, `#${r.rank}`));
       const handleCell = el('span', 'lb-handle');
-      handleCell.textContent = r.handle || 'Anonymous';
-      if (r.isMe) {
-        const tag = el('span', 'me-tag', 'you');
-        handleCell.appendChild(tag);
+      handleCell.appendChild(el('span', 'h-text', escapeHtml(r.handle || 'Anonymous')));
+      if (isMe) {
+        handleCell.appendChild(el('span', 'me-tag', 'you'));
       }
       row.appendChild(handleCell);
       row.appendChild(el('span', 'lb-rating', String(r.rating)));
@@ -533,9 +773,12 @@ class AccountPage {
       target.appendChild(row);
     });
 
+    const oldNote = target.parentNode.querySelector('.lb-note');
+    if (oldNote) oldNote.remove();
+
     if (source === 'local') {
       const note = el('div', 'lb-note');
-      note.textContent = 'Showing opponents you have played. Play more games to fill out your circle.';
+      note.innerHTML = `${INFO_IC}<span>Showing opponents you have played locally. <a href="play.html">Play more games</a> to fill out your circle.</span>`;
       target.parentNode.insertBefore(note, target.nextSibling);
     }
   }
@@ -565,7 +808,12 @@ class AccountPage {
     points.sort((a, b) => a.ts - b.ts);
 
     if (points.length === 0) {
-      wrap.appendChild(el('div', 'empty-mini', 'Not enough games yet.'));
+      wrap.appendChild(this._insightEmpty({
+        glyph: SPARKLE_IC,
+        title: 'No rating history yet',
+        body: 'Your rating trajectory will appear here after your first few games. Every match shapes the curve.',
+        cta: { label: 'Play a game', href: 'play.html' },
+      }));
       return;
     }
 
@@ -573,13 +821,13 @@ class AccountPage {
       points.unshift({ ts: points[0].ts - 1000, rating: baseRating });
     }
 
-    const W = 400, H = 100, padX = 6, padY = 14;
+    const W = 600, H = 140, padX = 10, padY = 18;
     const ratings = points.map((p) => p.rating);
     let minR = Math.min(...ratings);
     let maxR = Math.max(...ratings);
     if (minR === maxR) { minR -= 25; maxR += 25; }
     const span = Math.max(1, maxR - minR);
-    const pad = span * 0.08;
+    const pad = span * 0.1;
     minR -= pad; maxR += pad;
 
     const n = points.length;
@@ -593,26 +841,65 @@ class AccountPage {
     const lastX = xAt(n - 1);
     const lastY = yAt(last);
 
+    const maxIdx = ratings.indexOf(Math.max(...ratings));
+    const minIdx = ratings.indexOf(Math.min(...ratings));
+
     const grad = `cr-rate-${Math.random().toString(36).slice(2, 8)}`;
+    const gridLines = [0.25, 0.5, 0.75].map((f) => {
+      const y = padY + f * (H - padY * 2);
+      return `<line x1="${padX}" y1="${y.toFixed(2)}" x2="${W - padX}" y2="${y.toFixed(2)}" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>`;
+    }).join('');
+
+    const marker = (idx, color, label) => {
+      if (idx < 0 || idx >= points.length) return '';
+      const x = xAt(idx);
+      const y = yAt(points[idx].rating);
+      return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="3" fill="${color}" stroke="#08080c" stroke-width="1.2"/><text x="${x.toFixed(2)}" y="${(y - 7).toFixed(2)}" text-anchor="middle" fill="${color}" font-family="JetBrains Mono, monospace" font-size="9" font-weight="600">${label}</text>`;
+    };
+
     const svg = `
-      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Rating over time">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Rating over time, ${n} points, range ${Math.round(minR)} to ${Math.round(maxR)}">
         <defs>
           <linearGradient id="${grad}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#d4af37" stop-opacity="0.45"/>
+            <stop offset="0%" stop-color="#d4af37" stop-opacity="0.4"/>
             <stop offset="100%" stop-color="#d4af37" stop-opacity="0"/>
           </linearGradient>
         </defs>
+        ${gridLines}
         <path d="${fillPath}" fill="url(#${grad})" stroke="none"/>
-        <path d="${linePath}" fill="none" stroke="#f3d678" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle cx="${lastX.toFixed(2)}" cy="${lastY.toFixed(2)}" r="3.2" fill="#f3d678" stroke="#08080c" stroke-width="1.4"/>
+        <path d="${linePath}" fill="none" stroke="#f3d678" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+        ${marker(maxIdx, '#7ac35f', 'HI')}
+        ${marker(minIdx, '#e05656', 'LO')}
+        <circle cx="${lastX.toFixed(2)}" cy="${lastY.toFixed(2)}" r="4" fill="#f3d678" stroke="#08080c" stroke-width="1.6"/>
       </svg>`;
 
     wrap.innerHTML = svg;
+
     const axis = el('div', 'y-axis');
     axis.appendChild(el('span', null, String(Math.round(maxR))));
     axis.appendChild(el('span', null, String(Math.round((maxR + minR) / 2))));
     axis.appendChild(el('span', null, String(Math.round(minR))));
     wrap.appendChild(axis);
+
+    const xaxis = el('div', 'x-axis');
+    xaxis.appendChild(el('span', null, formatRelativeTime(points[0].ts)));
+    xaxis.appendChild(el('span', null, formatRelativeTime(points[Math.floor(n / 2)].ts)));
+    xaxis.appendChild(el('span', null, formatRelativeTime(points[n - 1].ts)));
+    wrap.appendChild(xaxis);
+  }
+
+  _insightEmpty({ glyph, title, body, cta }) {
+    const node = el('div', 'insight-empty');
+    const g = el('div', 'glyph', glyph);
+    node.appendChild(g);
+    node.appendChild(el('h4', null, escapeHtml(title)));
+    node.appendChild(el('p', null, escapeHtml(body)));
+    if (cta) {
+      const a = el('a', 'btn btn-primary btn-sm', escapeHtml(cta.label));
+      a.href = cta.href;
+      node.appendChild(a);
+    }
+    return node;
   }
 
   renderOpenings(games) {
@@ -630,7 +917,11 @@ class AccountPage {
     }
 
     if (counts.size === 0) {
-      wrap.appendChild(el('div', 'empty-mini', 'Opening data appears after a few games.'));
+      wrap.appendChild(this._insightEmpty({
+        glyph: SPARKLE_IC,
+        title: 'Openings will appear here',
+        body: 'After a few games, your most-played openings will be ranked by frequency.',
+      }));
       return;
     }
 
@@ -667,7 +958,11 @@ class AccountPage {
     }
 
     if (counts.size === 0) {
-      wrap.appendChild(el('div', 'empty-mini', 'Play a few games to see your time control mix.'));
+      wrap.appendChild(this._insightEmpty({
+        glyph: SPARKLE_IC,
+        title: 'Time controls will appear here',
+        body: 'Your distribution across bullet, blitz, and rapid will show as a donut.',
+      }));
       return;
     }
 
@@ -689,7 +984,7 @@ class AccountPage {
     });
 
     const svg = `
-      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-label="Time control distribution">
+      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Time control distribution, ${total} games across ${segments.length} controls">
         ${paths.join('')}
         <text x="${cx}" y="${cy - 4}" text-anchor="middle" fill="#f4f1ea" font-family="JetBrains Mono, monospace" font-size="22" font-weight="700">${total}</text>
         <text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#7a756f" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">GAMES</text>
@@ -729,7 +1024,7 @@ class AccountPage {
     if (!wrap) return;
     wrap.innerHTML = '';
     wrap.appendChild(el('div', 'mistakes-placeholder', `
-      <div class="glyph" aria-hidden="true">♞</div>
+      <div class="glyph" aria-hidden="true">${KNIGHT_IC}</div>
       <h4>Coming soon</h4>
       <p>Position-level blunder clusters will appear here once the analysis engine lands.</p>
     `));
@@ -758,9 +1053,16 @@ class AccountPage {
     input.placeholder = 'Your display name';
     field.appendChild(input);
 
+    const hint = el('p', null, 'Visible on your profile, the play panel, and the leaderboard.');
+    hint.style.cssText = 'margin:4px 0 0;font-size:12.5px;color:var(--ink-3);font-family:var(--mono);';
+
+    const body = el('div');
+    body.appendChild(field);
+    body.appendChild(hint);
+
     const result = await modal({
-      title: 'Change handle',
-      body: field,
+      title: 'Edit handle',
+      body,
       actions: [
         { label: 'Cancel', value: null, kind: 'ghost' },
         { label: 'Save', value: 'save', kind: 'primary' },
@@ -779,9 +1081,21 @@ class AccountPage {
       return;
     }
 
-    this.user = persistUserHandle(this.user, next);
+    try {
+      this.user = store.setHandle(next) || { ...this.user, handle: next };
+    } catch (e) {
+      this.user = { ...this.user, handle: next };
+    }
     setText('handle', this.user.handle);
-    toast({ title: 'Handle updated', message: `You are now ${this.user.handle}.`, kind: 'good' });
+    toast({
+      title: 'Handle updated',
+      message: `You are now ${this.user.handle}. Visible on all pages.`,
+      kind: 'good',
+    });
+
+    if (this.tabsLoaded.leaderboard) {
+      this.loadLeaderboard();
+    }
   }
 
   async confirmReset() {
@@ -799,7 +1113,10 @@ class AccountPage {
     this._resetConfirming = false;
     if (!ok) return;
 
-    try { store.clearAll(); } catch (e) {}
+    try {
+      store.clearAll();
+      if (typeof store.clearSyncMeta === 'function') store.clearSyncMeta();
+    } catch (e) {}
     toast({ title: 'Profile reset', message: 'Reloading…', kind: 'good' });
     setTimeout(() => { try { location.reload(); } catch (e) {} }, 700);
   }

@@ -220,55 +220,40 @@
 
       <div class="prank-section-label">Available pranks</div>
       <div class="prank-grid" id="prankGrid">
-        <button class="prank-btn" data-prank="force_blunder" type="button">
-          <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 L9 9 M14 14 L20 20"/><path d="M4 20 L9 15 M14 10 L20 4"/><circle cx="12" cy="12" r="2.5"/></svg>
-          </span>
-          <span class="prank-name">Force Blunder</span>
-          <span class="prank-desc">Makes their next move terrible</span>
-        </button>
-        <button class="prank-btn" data-prank="board_flip" type="button">
+        <button class="prank-btn" data-prank="flip" type="button">
           <span class="prank-icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
           </span>
           <span class="prank-name">Board Flip</span>
-          <span class="prank-desc">Flips their board randomly</span>
+          <span class="prank-desc">Flips their board orientation</span>
         </button>
-        <button class="prank-btn" data-prank="silly_pieces" type="button">
+        <button class="prank-btn" data-prank="fake_lag" type="button">
           <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"/><circle cx="15" cy="9" r="3"/><path d="M3 18c1.5-2.5 4-3 6-3"/><path d="M21 18c-1.5-2.5-4-3-6-3"/><line x1="8" y1="20" x2="16" y2="20"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
           </span>
-          <span class="prank-name">Silly Pieces</span>
-          <span class="prank-desc">Pieces become emojis for 10s</span>
+          <span class="prank-name">Fake Lag</span>
+          <span class="prank-desc">Artificially delays their moves</span>
         </button>
-        <button class="prank-btn" data-prank="fake_brilliancy" type="button">
+        <button class="prank-btn" data-prank="fog" type="button">
           <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z"/><path d="M19 4 L19.7 6 L21.7 6.7 L19.7 7.4 L19 9.4 L18.3 7.4 L16.3 6.7 L18.3 6 Z"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h18M3 12h18M3 16h18"/></svg>
           </span>
-          <span class="prank-name">Fake Brilliancy</span>
-          <span class="prank-desc">Shows "Brilliant!!" for a bad move</span>
+          <span class="prank-name">War Fog</span>
+          <span class="prank-desc">Hides parts of the board</span>
         </button>
-        <button class="prank-btn prank-self" data-prank="stockfish_mode" type="button">
+        <button class="prank-btn" data-prank="piece_swarm" type="button">
           <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="14" r="3"/><circle cx="16" cy="14" r="3"/><path d="M5 9c0-3 1.5-5 3-5"/><path d="M19 9c0-3-1.5-5-3-5"/><path d="M3 17c2 3 6 3 9 0"/><path d="M21 17c-2 3-6 3-9 0"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"/><circle cx="15" cy="9" r="3"/><circle cx="12" cy="15" r="3"/></svg>
           </span>
-          <span class="prank-name">Stockfish Mode</span>
-          <span class="prank-tag">YOU</span>
-          <span class="prank-desc">See best moves on your board</span>
+          <span class="prank-name">Piece Swarm</span>
+          <span class="prank-desc">Extra pieces appear temporarily</span>
         </button>
-        <button class="prank-btn" data-prank="choose_moves" type="button">
+        <button class="prank-btn" data-prank="reverse_pawn" type="button">
           <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 L7 7 L21 17 M21 17 L17 21 M21 17 L13 13"/><path d="M3 3 L7 7"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L12 22 M6 8 L12 2 L18 8"/></svg>
           </span>
-          <span class="prank-name">Choose Their Moves</span>
-          <span class="prank-desc">You control their next move</span>
-        </button>
-        <button class="prank-btn prank-fake-ban" data-prank="fake_ban" type="button">
-          <span class="prank-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L4 5 L4 11 C4 16 7 19 12 21 C17 19 20 16 20 11 L20 5 Z"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </span>
-          <span class="prank-name">Fake Ban</span>
-          <span class="prank-desc">"You've been banned" → "Just kidding!"</span>
+          <span class="prank-name">Reverse Pawn</span>
+          <span class="prank-desc">Pawns move in reverse</span>
         </button>
       </div>
 

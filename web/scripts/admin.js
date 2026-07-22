@@ -48,6 +48,45 @@ function _normalizeUser(u) {
   };
 }
 
+function _normalizeGame(g) {
+  if (!g || typeof g !== 'object') return g;
+  if (g.white && typeof g.white === 'object') return g;
+  return {
+    id: g.id || g.gameId,
+    gameId: g.gameId || g.id,
+    fen: g.fen,
+    turn: g.turn,
+    white: {
+      id: g.white_id || (g.white && g.white.id),
+      userId: g.white_id || (g.white && g.white.userId),
+      handle: g.white_handle || (g.white && g.white.handle),
+      rating: g.white_rating != null ? g.white_rating : (g.white && g.white.rating),
+    },
+    black: {
+      id: g.black_id || (g.black && g.black.id),
+      userId: g.black_id || (g.black && g.black.userId),
+      handle: g.black_handle || (g.black && g.black.handle),
+      rating: g.black_rating != null ? g.black_rating : (g.black && g.black.rating),
+    },
+    timeControl: g.time_control || g.timeControl,
+    prankHistory: g.prankHistory || g.prank_history || [],
+  };
+}
+
+function _normalizeAudit(e) {
+  if (!e || typeof e !== 'object') return e;
+  return {
+    timestamp: e.timestamp != null ? e.timestamp : e.created_at,
+    admin: e.admin != null ? e.admin : e.admin_id,
+    adminHandle: e.adminHandle != null ? e.adminHandle : e.admin_id,
+    action: e.action,
+    type: e.type != null ? e.type : e.action,
+    target: e.target != null ? e.target : e.target_id,
+    targetUserId: e.targetUserId != null ? e.targetUserId : e.target_id,
+    detail: e.detail,
+  };
+}
+
 function parseFenBoard(fen) {
   if (!fen || typeof fen !== 'string') return null;
   const placement = fen.split(' ')[0];
@@ -354,7 +393,7 @@ class AdminPanel {
     try {
       const data = await this._api('/admin/games');
       const games = Array.isArray(data) ? data : (data && Array.isArray(data.games) ? data.games : []);
-      this.gamesCache = games;
+      this.gamesCache = games.map(_normalizeGame);
       this._renderGames();
     } catch (err) {
       if (String(err.message).includes('Session expired')) return;
@@ -671,7 +710,8 @@ class AdminPanel {
     }
     try {
       const data = await this._api('/admin/audit');
-      const logs = Array.isArray(data) ? data : (data && Array.isArray(data.events) ? data.events : []);
+      const raw = Array.isArray(data) ? data : (data && Array.isArray(data.entries) ? data.entries : (data && Array.isArray(data.events) ? data.events : []));
+      const logs = raw.map(_normalizeAudit);
       this._logsLoaded = true;
       this._renderLogs(logs);
     } catch (err) {
@@ -856,7 +896,7 @@ class AdminPanel {
       const target = ev.targetHandle || (game.white && game.white.handle) || '';
       const rel = formatRelativeTime(ev.timestamp || ev.time);
       item.innerHTML = `
-        <span class="ic" aria-hidden="true">${PRANK_HISTORY_ICONS[prank] || PRANK_HISTORY_ICONS.force_blunder}</span>
+        <span class="ic" aria-hidden="true">${PRANK_HISTORY_ICONS[prank] || PRANK_HISTORY_ICONS.flip}</span>
         <div class="prank-history-item-text">
           <div class="prank-history-item-action">${escapeHtml(label)}</div>
           <div class="prank-history-item-meta">${escapeHtml(target ? `→ ${target}` : '')}</div>
@@ -875,20 +915,18 @@ class AdminPanel {
       toast({ title: 'No game selected', message: 'Open a live game first.', kind: 'bad' });
       return;
     }
-    const isSelf = prank === 'stockfish_mode';
-    if (!isSelf && !this.currentTargetId) {
+    if (!this.currentTargetId) {
       toast({ title: 'Pick a target', message: 'Choose which player to prank.', kind: 'info' });
       return;
     }
 
     const label = PRANK_LABELS[prank] || prank;
-    const danger = prank === 'fake_ban';
     const ok = await confirm({
       title: `Send "${label}"?`,
       message: this._prankConfirmMessage(prank),
       confirmLabel: 'Send it',
       cancelLabel: 'Cancel',
-      danger,
+      danger: false,
     });
     if (!ok) return;
 
@@ -897,11 +935,11 @@ class AdminPanel {
     try {
       await this._api(`/admin/games/${encodeURIComponent(this.currentGameId)}/prank`, {
         method: 'POST',
-        body: JSON.stringify({ prank, targetUserId: isSelf ? null : this.currentTargetId }),
+        body: JSON.stringify({ prank, targetUserId: this.currentTargetId }),
       });
       toast({
         title: `${label} deployed`,
-        message: isSelf ? 'Activated for your board.' : 'Targeted and in effect.',
+        message: 'Targeted and in effect.',
         kind: 'good',
       });
       await this.loadGames();
@@ -922,13 +960,11 @@ class AdminPanel {
 
   _prankConfirmMessage(prank) {
     switch (prank) {
-      case 'force_blunder': return 'Their next legal move will be picked from the worst available. One-shot.';
-      case 'board_flip': return 'Their board orientation flips at a random moment this turn.';
-      case 'silly_pieces': return 'Pieces render as novelty glyphs for 10 seconds, then snap back.';
-      case 'fake_brilliancy': return 'Their next move gets a "Brilliant!!" callout, regardless of quality.';
-      case 'stockfish_mode': return 'Reveals best-move arrows on YOUR board only. Opponent sees nothing.';
-      case 'choose_moves': return 'You will be prompted to pick their next move from legal options.';
-      case 'fake_ban': return 'They will see a ban screen, then a "Just kidding!" reveal after 4 seconds.';
+      case 'flip': return 'Their board orientation flips for a few seconds.';
+      case 'fake_lag': return 'Their moves will be artificially delayed.';
+      case 'fog': return 'Parts of the board will be hidden from them.';
+      case 'piece_swarm': return 'Extra pieces appear on their board temporarily.';
+      case 'reverse_pawn': return 'Their pawns will move in reverse.';
       default: return 'This will affect the targeted player\'s current game.';
     }
   }

@@ -22,6 +22,76 @@ const SERVER_HEALTH_TIMEOUT_MS = 5000;
 
 const GLYPH = { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' };
 
+const PIECE_VALUE = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+
+const PST_P = [
+   0,  0,  0,  0,  0,  0,  0,  0,
+  50, 50, 50, 50, 50, 50, 50, 50,
+  10, 10, 20, 30, 30, 20, 10, 10,
+   5,  5, 10, 25, 25, 10,  5,  5,
+   0,  0,  0, 20, 20,  0,  0,  0,
+   5, -5,-10,  0,  0,-10, -5,  5,
+   5, 10, 10,-20,-20, 10, 10,  5,
+   0,  0,  0,  0,  0,  0,  0,  0,
+];
+const PST_N = [
+  -50,-40,-30,-30,-30,-30,-40,-50,
+  -40,-20,  0,  0,  0,  0,-20,-40,
+  -30,  0, 10, 15, 15, 10,  0,-30,
+  -30,  5, 15, 20, 20, 15,  5,-30,
+  -30,  0, 15, 20, 20, 15,  0,-30,
+  -30,  5, 10, 15, 15, 10,  5,-30,
+  -40,-20,  0,  5,  5,  0,-20,-40,
+  -50,-40,-30,-30,-30,-30,-40,-50,
+];
+const PST_B = [
+  -20,-10,-10,-10,-10,-10,-10,-20,
+  -10,  0,  0,  0,  0,  0,  0,-10,
+  -10,  0,  5, 10, 10,  5,  0,-10,
+  -10,  5,  5, 10, 10,  5,  5,-10,
+  -10,  0, 10, 10, 10, 10,  0,-10,
+  -10, 10, 10, 10, 10, 10, 10,-10,
+  -10,  5,  0,  0,  0,  0,  5,-10,
+  -20,-10,-10,-10,-10,-10,-10,-20,
+];
+const PST_R = [
+   0,  0,  0,  0,  0,  0,  0,  0,
+   5, 10, 10, 10, 10, 10, 10,  5,
+  -5,  0,  0,  0,  0,  0,  0, -5,
+  -5,  0,  0,  0,  0,  0,  0, -5,
+  -5,  0,  0,  0,  0,  0,  0, -5,
+  -5,  0,  0,  0,  0,  0,  0, -5,
+  -5,  0,  0,  0,  0,  0,  0, -5,
+   0,  0,  0,  5,  5,  0,  0,  0,
+];
+const PST_Q = [
+  -20,-10,-10, -5, -5,-10,-10,-20,
+  -10,  0,  0,  0,  0,  0,  0,-10,
+  -10,  0,  5,  5,  5,  5,  0,-10,
+   -5,  0,  5,  5,  5,  5,  0, -5,
+    0,  0,  5,  5,  5,  5,  0, -5,
+  -10,  5,  5,  5,  5,  5,  0,-10,
+  -10,  0,  5,  0,  0,  0,  0,-10,
+  -20,-10,-10, -5, -5,-10,-10,-20,
+];
+const PST_K = [
+  -30,-40,-40,-50,-50,-40,-40,-30,
+  -30,-40,-40,-50,-50,-40,-40,-30,
+  -30,-40,-40,-50,-50,-40,-40,-30,
+  -30,-40,-40,-50,-50,-40,-40,-30,
+  -20,-30,-30,-40,-40,-30,-30,-20,
+  -10,-20,-20,-20,-20,-20,-20,-10,
+   20, 20,  0,  0,  0,  0, 20, 20,
+   20, 30, 10,  0,  0, 10, 30, 20,
+];
+const PST = { p: PST_P, n: PST_N, b: PST_B, r: PST_R, q: PST_Q, k: PST_K };
+
+function pstIndex(square, color) {
+  const file = square.charCodeAt(0) - 97;
+  const rank = parseInt(square[1], 10) - 1;
+  return color === 'w' ? (7 - rank) * 8 + file : rank * 8 + file;
+}
+
 const SKILL_TO_ELO = (s) => {
   const t = Math.max(0, Math.min(20, s)) / 20;
   return Math.round(800 + (2400 - 800) * t);
@@ -329,7 +399,7 @@ class GameController {
     hide($('lobby'));
     hide($('postGame'));
     show($('game'));
-    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   async startBotGame(skillLevel) {
@@ -623,7 +693,13 @@ class GameController {
       return;
     }
 
-    const user = store.ensureUser();
+    let user;
+    try {
+      user = await store.ensureServerUser();
+    } catch (err) {
+      toast({ title: 'Could not sign in', message: (err && err.message) || 'Authentication failed.', kind: 'bad' });
+      return;
+    }
     const tc = timeControl || this.timeControl || TIME_CONTROLS.rapid;
     const tcKey = Object.keys(TIME_CONTROLS).find((k) => TIME_CONTROLS[k] === tc) || 'rapid';
 
@@ -711,7 +787,11 @@ class GameController {
     const res = await fetch(API_BASE_URL + '/api/match/queue', {
       method: 'POST',
       signal,
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${user.token}`,
+      },
       body: JSON.stringify({
         rating: Math.round(user.rating || 1200),
         timeControl: tcKey,
@@ -1308,19 +1388,77 @@ class GameController {
   }
 
   _greedyFallbackMove() {
-    const moves = this.chess.moves({ verbose: true });
+    const chess = this.chess;
+    const moves = chess.moves({ verbose: true });
     if (!moves.length) return null;
+    const me = chess.turn();
+
+    const attackersOf = (square, byColor, state) => {
+      const { boardState, fen } = state;
+      let cheapest = null;
+      const sFile = square.charCodeAt(0) - 97;
+      const sRank = parseInt(square[1], 10) - 1;
+      const consider = (type) => {
+        if (!cheapest || PIECE_VALUE[type] < PIECE_VALUE[cheapest]) cheapest = type;
+      };
+      const pawnRank = byColor === 'w' ? sRank - 1 : sRank + 1;
+      if (pawnRank >= 0 && pawnRank < 8) {
+        for (const df of [-1, 1]) {
+          const pf = sFile + df;
+          if (pf < 0 || pf > 7) continue;
+          const c = boardState[7 - pawnRank][pf];
+          if (c && c.color === byColor && c.type === 'p') consider('p');
+        }
+      }
+      for (let r = 0; r < 8; r++) {
+        for (let f = 0; f < 8; f++) {
+          const c = boardState[r][f];
+          if (!c || c.color !== byColor || c.type === 'p') continue;
+          const fromSq = 'abcdefgh'[f] + (8 - r);
+          const probe = new Chess();
+          try {
+            probe.load(fen);
+            const legal = probe.moves({ square: fromSq, verbose: true });
+            if (legal.some((mv) => mv.to === square)) consider(c.type);
+          } catch (_) {}
+        }
+      }
+      return cheapest;
+    };
+
     const score = (m) => {
       let s = 0;
-      if (m.captured) s += { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 }[m.captured] || 0;
-      if (m.promotion) s += 800;
-      const centerDist = Math.abs(4.5 - (m.to.charCodeAt(0) - 97)) + Math.abs(4.5 - (parseInt(m.to[1]) - 1));
-      s += (8 - centerDist) * 3;
+      if (m.captured) s += PIECE_VALUE[m.captured] || 0;
+      if (m.promotion) s += PIECE_VALUE[m.promotion] || 800;
+      const piece = m.piece;
+      s += PST[piece] ? PST[piece][pstIndex(m.to, me)] : 0;
       if (m.san.includes('+')) s += 50;
+      if (m.san.includes('#')) s += 100000;
+
+      let unsafe = false;
+      try {
+        const probe = new Chess();
+        probe.load(chess.fen());
+        probe.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+        const state = { boardState: probe.board(), fen: probe.fen() };
+        const enemy = me === 'w' ? 'b' : 'w';
+        const attacker = attackersOf(m.to, enemy, state);
+        if (attacker) {
+          const defender = attackersOf(m.to, me, state);
+          const mine = PIECE_VALUE[piece] || 0;
+          const see = (defender ? PIECE_VALUE[defender] : 0) - PIECE_VALUE[attacker];
+          if (!defender || mine > PIECE_VALUE[attacker]) unsafe = true;
+          else if (see < 0) unsafe = true;
+        }
+        if (unsafe) s -= (PIECE_VALUE[piece] || 0) * 0.9;
+      } catch (_) {}
+
       return s;
     };
+
     moves.sort((a, b) => score(b) - score(a));
-    const top = moves.filter((m) => score(m) >= score(moves[0]) - 30);
+    const best = score(moves[0]);
+    const top = moves.filter((m) => score(m) >= best - 25);
     const pick = top[Math.floor(Math.random() * top.length)];
     return pick.lan || (pick.from + pick.to + (pick.promotion || ''));
   }
@@ -1337,19 +1475,60 @@ class GameController {
     }
   }
 
+  _setThinkingMessage(text) {
+    const t = $('thinking');
+    if (!t) return;
+    t.hidden = false;
+    const span = t.querySelector('span');
+    if (span) span.textContent = text || '\u2026';
+  }
+
   async _asyncEval() {
     if (!this.engine) return;
     const fen = this.chess.fen();
     const sideToMove = this.chess.turn();
     try {
-      const info = await this.engine.analyze({ fen, depth: 16, movetime: 1500 });
-      this.evalHistory.push({ fen, info, sideToMove });
+      const info = await this.engine.analyze({ fen, depth: 18, movetime: 2000 });
+      this._recordEval(fen, info, sideToMove);
       this._renderEval(info);
     } catch (_) {}
   }
 
+  _recordEval(fen, info, sideToMove) {
+    const existing = this.evalHistory.find((e) => e.fen === fen);
+    if (existing) {
+      existing.info = info;
+      existing.sideToMove = sideToMove;
+      existing.deep = false;
+      return;
+    }
+    this.evalHistory.push({ fen, info, sideToMove, deep: false });
+  }
+
+  async _deepReanalyze() {
+    if (!this.engine) return;
+    const fens = [];
+    for (const m of this.moveHistory) {
+      if (m.fenAfter && !this._deepFens?.has(m.fenAfter)) fens.push(m.fenAfter);
+    }
+    const startFen = this.moveHistory[0]?.fenBefore;
+    if (startFen && !this._deepFens?.has(startFen)) fens.unshift(startFen);
+    if (!fens.length) return;
+    this._deepFens = this._deepFens || new Set();
+    for (const fen of fens) {
+      const sideToMove = fen.split(' ')[1];
+      try {
+        const info = await this.engine.deepAnalyze({ fen, depth: 22, movetime: 3000 });
+        const existing = this.evalHistory.find((e) => e.fen === fen);
+        if (existing) { existing.info = info; existing.sideToMove = sideToMove; existing.deep = true; }
+        else this.evalHistory.push({ fen, info, sideToMove, deep: true });
+        this._deepFens.add(fen);
+      } catch (_) {}
+    }
+  }
+
   _skillToLevel(skill) {
-    return Math.max(1, Math.min(8, Math.round((Math.max(1, Math.min(20, skill)) / 20) * 8)));
+    return Math.max(1, Math.min(20, Math.round(skill)));
   }
 
   _renderEval(info) {
@@ -1461,6 +1640,12 @@ class GameController {
 
     const oppRating = (this.opponent && this.opponent.rating) || 1200;
     const score = result === 'win' ? 1 : result === 'draw' ? 0.5 : 0;
+
+    if (this.engine && this.moveHistory.length > 0) {
+      this._setThinkingMessage('Analyzing game\u2026');
+      try { await this._deepReanalyze(); } catch (_) {}
+      this._setThinking(false);
+    }
 
     const analysis = this._analyzeMyMoves();
     const estElo = accuracyToElo(analysis.accuracy);

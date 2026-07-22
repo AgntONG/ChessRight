@@ -687,3 +687,33 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.invite-status {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-2);
+  padding: 8px 0 20px;
+  margin: 0;
+  min-height: 20px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.invite-status.bad { color: var(--bad); }
+.invite-status.good { color: var(--good); }
+.invite-status.info { color: var(--info); }
+.invite-status::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.invite-status.bad::before { animation: none; }
+.invite-status.good::before { animation: none; }

@@ -3,11 +3,17 @@ import Peer from 'https://esm.sh/peerjs@1.5.4?bundle';
 const DEFAULT_API_BASE = '/api';
 const DEFAULT_TIMECONTROL = '10+5';
 const QUEUE_TIMEOUT_MS = 120000;
-const PEER_READY_TIMEOUT_MS = 15000;
+const PEER_READY_TIMEOUT_MS = 20000;
 const CONNECT_TIMEOUT_MS = 15000;
 const HELLO_TIMEOUT_MS = 15000;
 const HEALTH_TIMEOUT_MS = 5000;
 const LATENCY_INTERVAL_MS = 5000;
+const CONNECT_RETRY_ATTEMPTS = 3;
+const CONNECT_RETRY_DELAY_MS = 2000;
+const PEER_RECONNECT_DELAY_MS = 1000;
+const PEER_RECONNECT_MAX_ATTEMPTS = 5;
+const PEER_REREGISTER_DELAY_MS = 2000;
+const PEER_KEEPALIVE_INTERVAL_MS = 30000;
 const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const INVITE_PREFIX = 'CR-';
 const INVITE_PEER_NAMESPACE = 'chessright-invite-';
@@ -91,6 +97,44 @@ function withTimeout(ms, label) {
   });
   const cancel = () => clearTimeout(timer);
   return { promise: p, cancel };
+}
+
+const PEER_ERROR_MESSAGES = {
+  'browser-incompatible': 'Your browser does not support WebRTC.',
+  'disconnected': 'Lost connection to the matchmaking broker.',
+  'invalid-id': 'Invalid peer identifier.',
+  'network': 'Network error reaching the matchmaking broker.',
+  'peer-unavailable': 'Host not found \u2014 the invite may have expired or the host left.',
+  'ssl-unavailable': 'Secure connection (HTTPS/TLS) is required for matchmaking.',
+  'server-error': 'The matchmaking broker returned an error.',
+  'socket-error': 'WebSocket connection to the broker failed.',
+  'socket-closed': 'WebSocket connection to the broker closed unexpectedly.',
+  'unavailable-id': 'That peer identifier is already taken.',
+  'ice-failed': 'Could not establish a direct connection (NAT/firewall blocked WebRTC).',
+};
+
+function mapPeerErrorType(type) {
+  return type || 'network';
+}
+
+function describePeerError(type, message, fallback) {
+  const key = mapPeerErrorType(type);
+  const mapped = PEER_ERROR_MESSAGES[key];
+  if (mapped) return mapped;
+  if (message) return message;
+  return fallback || 'Peer connection error.';
+}
+
+function isRetryablePeerError(type) {
+  const t = mapPeerErrorType(type);
+  return (
+    t === 'peer-unavailable' ||
+    t === 'network' ||
+    t === 'server-error' ||
+    t === 'socket-error' ||
+    t === 'socket-closed' ||
+    t === 'disconnected'
+  );
 }
 
 export class QueueError extends Error {
@@ -379,6 +423,7 @@ export class PeerConnection {
     onOpen,
     onDisconnect,
     onError,
+    onStatusChange,
     peerConfig,
   } = {}) {
     if (!myPeerId) throw new PeerError('myPeerId is required');
@@ -394,6 +439,8 @@ export class PeerConnection {
     this.onDisconnect =
       typeof onDisconnect === 'function' ? onDisconnect : () => {};
     this.onError = typeof onError === 'function' ? onError : () => {};
+    this.onStatusChange =
+      typeof onStatusChange === 'function' ? onStatusChange : () => {};
 
     this.peer = null;
     this.conn = null;
@@ -411,7 +458,18 @@ export class PeerConnection {
     this._pendingPings = new Map();
     this._internalAbort = new AbortController();
 
+    this._reconnectAttempts = 0;
+    this._reconnectTimer = null;
+    this._reregisterTimer = null;
+    this._keepaliveTimer = null;
+
     this._initPeer();
+  }
+
+  _emitStatus(status) {
+    try {
+      this.onStatusChange(status);
+    } catch (_) {}
   }
 
   _initPeer() {
@@ -426,14 +484,17 @@ export class PeerConnection {
       });
       this._peerReadyError = e;
       this.onError(e);
+      this._emitStatus('failed');
       return;
     }
     this.peer = peer;
+    this._emitStatus('connecting');
 
     this._peerReadyPromise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         const e = new PeerError(
-          `peer broker connection timed out after ${PEER_READY_TIMEOUT_MS}ms`
+          `peer broker connection timed out after ${PEER_READY_TIMEOUT_MS}ms`,
+          { code: 'network' }
         );
         try {
           peer.off('open', onOpen);
@@ -445,6 +506,7 @@ export class PeerConnection {
         this.peer = null;
         this._peerReadyError = e;
         this.onError(e);
+        this._emitStatus('failed');
         reject(e);
       }, PEER_READY_TIMEOUT_MS);
 
@@ -454,24 +516,59 @@ export class PeerConnection {
           peer.off('error', onErrorEvent);
         } catch (_) {}
         if (id) this.myPeerId = id;
+        this._reconnectAttempts = 0;
+        this._startKeepalive();
+        this._emitStatus('connected');
         resolve();
       };
       const onErrorEvent = (err) => {
         clearTimeout(timer);
-        const e =
-          err instanceof Error
-            ? new PeerError(`peer error: ${err.message}`, {
-                code: err.type || err.code,
-                cause: err,
-              })
-            : new PeerError(`peer error: ${String(err)}`, { code: err && err.type });
+        const type = err && (err.type || err.code);
+        const message =
+          err instanceof Error ? err.message : String(err);
+        const e = new PeerError(
+          `peer error: ${describePeerError(type, message, message)}`,
+          { code: type, cause: err instanceof Error ? err : undefined }
+        );
         this._peerReadyError = e;
         this.onError(e);
+        this._emitStatus('failed');
         reject(e);
       };
 
       peer.on('open', onOpen);
       peer.on('error', onErrorEvent);
+    });
+
+    peer.on('error', (err) => {
+      if (this._closedIntentionally) return;
+      const type = err && (err.type || err.code);
+      const message = err instanceof Error ? err.message : String(err);
+      const e = new PeerError(
+        `peer error: ${describePeerError(type, message, message)}`,
+        { code: type, cause: err instanceof Error ? err : undefined }
+      );
+      this.onError(e);
+      if (type === 'peer-unavailable') return;
+      if (!isRetryablePeerError(type)) this._emitStatus('failed');
+    });
+
+    peer.on('disconnected', () => {
+      if (this._closedIntentionally) return;
+      this._stopKeepalive();
+      this._emitStatus('reconnecting');
+      this._scheduleReconnect();
+    });
+
+    peer.on('close', () => {
+      if (this._closedIntentionally) return;
+      this._stopKeepalive();
+      if (this.role === 'host') {
+        this._emitStatus('reconnecting');
+        this._scheduleReregister();
+      } else {
+        this._emitStatus('failed');
+      }
     });
 
     if (this.role === 'host') {
@@ -487,6 +584,66 @@ export class PeerConnection {
     }
   }
 
+  _scheduleReconnect() {
+    if (this._reconnectTimer) return;
+    if (this._reconnectAttempts >= PEER_RECONNECT_MAX_ATTEMPTS) {
+      const e = new PeerError(
+        'gave up reconnecting to the broker after ' +
+          PEER_RECONNECT_MAX_ATTEMPTS +
+          ' attempts',
+        { code: 'network' }
+      );
+      this.onError(e);
+      this._emitStatus('failed');
+      return;
+    }
+    this._reconnectAttempts += 1;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (this._closedIntentionally || !this.peer) return;
+      try {
+        this.peer.reconnect();
+      } catch (_) {}
+    }, PEER_RECONNECT_DELAY_MS);
+  }
+
+  _scheduleReregister() {
+    if (this._reregisterTimer) return;
+    this._reregisterTimer = setTimeout(() => {
+      this._reregisterTimer = null;
+      if (this._closedIntentionally) return;
+      try {
+        if (this.peer) {
+          this.peer.destroy();
+        }
+      } catch (_) {}
+      this.peer = null;
+      this._reconnectAttempts = 0;
+      this._initPeer();
+    }, PEER_REREGISTER_DELAY_MS);
+  }
+
+  _startKeepalive() {
+    this._stopKeepalive();
+    this._keepaliveTimer = setInterval(() => {
+      if (this._closedIntentionally || !this.peer) return;
+      if (this.peer.open === false || this.peer.disconnected === true) {
+        if (!this.peer.disconnected) {
+          try {
+            this.peer.reconnect();
+          } catch (_) {}
+        }
+      }
+    }, PEER_KEEPALIVE_INTERVAL_MS);
+  }
+
+  _stopKeepalive() {
+    if (this._keepaliveTimer) {
+      clearInterval(this._keepaliveTimer);
+      this._keepaliveTimer = null;
+    }
+  }
+
   async ready() {
     if (this._peerReadyError) throw this._peerReadyError;
     if (!this._peerReadyPromise) {
@@ -495,7 +652,7 @@ export class PeerConnection {
     await this._peerReadyPromise;
   }
 
-  async connect(targetPeerId) {
+  async connect(targetPeerId, attempts = CONNECT_RETRY_ATTEMPTS) {
     if (this.role !== 'guest') {
       throw new PeerError("connect() is only valid for role='guest'");
     }
@@ -503,65 +660,97 @@ export class PeerConnection {
     if (this._connectionPromise) return this._connectionPromise;
 
     this._connectionPromise = (async () => {
-      await this.ready();
-      if (!this.peer) throw new PeerError('peer unavailable');
-
-      let conn;
-      try {
-        conn = this.peer.connect(targetPeerId, {
-          reliable: true,
-          serialization: 'binary',
-        });
-      } catch (err) {
-        const e = new PeerError(`peer.connect failed: ${err.message}`, {
-          cause: err,
-        });
-        this.onError(e);
-        throw e;
+      let lastErr;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await this._connectOnce(targetPeerId);
+        } catch (err) {
+          lastErr = err;
+          const code = err && (err.code || err.reason);
+          if (
+            err instanceof PeerError ||
+            err instanceof ConnectionError ||
+            isRetryablePeerError(code)
+          ) {
+            if (i < attempts - 1) {
+              await new Promise((r) => setTimeout(r, CONNECT_RETRY_DELAY_MS));
+              continue;
+            }
+          }
+          throw err;
+        }
       }
-      if (!conn) {
-        const e = new PeerError('peer.connect returned no connection');
-        this.onError(e);
-        throw e;
-      }
-
-      this._wireConnection(conn);
-
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          const e = new ConnectionError(
-            `data channel open timed out after ${CONNECT_TIMEOUT_MS}ms`
-          );
-          this.onError(e);
-          reject(e);
-        }, CONNECT_TIMEOUT_MS);
-
-        const onOpen = () => {
-          clearTimeout(timer);
-          try {
-            conn.off('error', onErrorEvent);
-          } catch (_) {}
-          resolve();
-        };
-        const onErrorEvent = (err) => {
-          clearTimeout(timer);
-          const e =
-            err instanceof Error
-              ? new ConnectionError(`data channel error: ${err.message}`, {
-                  reason: err.type || err.code,
-                  cause: err,
-                })
-              : new ConnectionError(`data channel error: ${String(err)}`);
-          this.onError(e);
-          reject(e);
-        };
-
-        conn.on('open', onOpen);
-        conn.on('error', onErrorEvent);
-      });
+      throw lastErr;
     })();
 
     return this._connectionPromise;
+  }
+
+  async _connectOnce(targetPeerId) {
+    await this.ready();
+    if (!this.peer) throw new PeerError('peer unavailable');
+
+    let conn;
+    try {
+      conn = this.peer.connect(targetPeerId, {
+        reliable: true,
+        serialization: 'binary',
+      });
+    } catch (err) {
+      const e = new PeerError(`peer.connect failed: ${err.message}`, {
+        cause: err,
+      });
+      this.onError(e);
+      throw e;
+    }
+    if (!conn) {
+      const e = new PeerError('peer.connect returned no connection');
+      this.onError(e);
+      throw e;
+    }
+
+    this._wireConnection(conn);
+
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const e = new ConnectionError(
+          `data channel open timed out after ${CONNECT_TIMEOUT_MS}ms`,
+          { reason: 'timeout' }
+        );
+        try { conn.off('open', onOpen); conn.off('error', onErrorEvent); } catch (_) {}
+        try { conn.close(); } catch (_) {}
+        if (this.conn === conn) this.conn = null;
+        this.onError(e);
+        reject(e);
+      }, CONNECT_TIMEOUT_MS);
+
+      const onOpen = () => {
+        clearTimeout(timer);
+        try {
+          conn.off('error', onErrorEvent);
+        } catch (_) {}
+        resolve();
+      };
+      const onErrorEvent = (err) => {
+        clearTimeout(timer);
+        const type = err && (err.type || err.code);
+        const message = err instanceof Error ? err.message : String(err);
+        const e = new ConnectionError(
+          `data channel error: ${describePeerError(type, message, message)}`,
+          {
+            reason: mapPeerErrorType(type),
+            cause: err instanceof Error ? err : undefined,
+          }
+        );
+        try { conn.off('open', onOpen); } catch (_) {}
+        if (this.conn === conn) this.conn = null;
+        this.onError(e);
+        reject(e);
+      };
+
+      conn.on('open', onOpen);
+      conn.on('error', onErrorEvent);
+    });
   }
 
   async waitForConnection() {
@@ -630,6 +819,7 @@ export class PeerConnection {
     conn.on('close', () => {
       this._open = false;
       this._stopLatencyProbes();
+      if (this.conn === conn) this.conn = null;
       if (this._waitCleanup) {
         try {
           this._waitCleanup();
@@ -732,6 +922,15 @@ export class PeerConnection {
   close(reason) {
     this._closedIntentionally = true;
     this._stopLatencyProbes();
+    this._stopKeepalive();
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    if (this._reregisterTimer) {
+      clearTimeout(this._reregisterTimer);
+      this._reregisterTimer = null;
+    }
 
     if (this.conn && this._open) {
       try {
@@ -901,6 +1100,7 @@ export class InviteHost {
     onGuestConnected,
     onGuestDisconnected,
     onError,
+    onStatusChange,
     peerConfig,
   } = {}) {
     this._handle = handle;
@@ -910,6 +1110,8 @@ export class InviteHost {
     this._onGuestDisconnected =
       typeof onGuestDisconnected === 'function' ? onGuestDisconnected : () => {};
     this._onError = typeof onError === 'function' ? onError : () => {};
+    this._onStatusChange =
+      typeof onStatusChange === 'function' ? onStatusChange : () => {};
     this._peerConfig = peerConfig || DEFAULT_PEER_CONFIG;
 
     this._code = null;
@@ -971,6 +1173,7 @@ export class InviteHost {
         });
       },
       onError: (err) => this._onError(err),
+      onStatusChange: (status) => this._onStatusChange(status),
     });
     session._bindConnection(conn);
 
@@ -1030,6 +1233,7 @@ export class InviteGuest {
     onHostConnected,
     onHostDisconnected,
     onError,
+    onStatusChange,
     peerConfig,
   } = {}) {
     this._handle = handle;
@@ -1039,6 +1243,8 @@ export class InviteGuest {
     this._onHostDisconnected =
       typeof onHostDisconnected === 'function' ? onHostDisconnected : () => {};
     this._onError = typeof onError === 'function' ? onError : () => {};
+    this._onStatusChange =
+      typeof onStatusChange === 'function' ? onStatusChange : () => {};
     this._peerConfig = peerConfig || DEFAULT_PEER_CONFIG;
 
     this._myPeerId = null;
@@ -1111,6 +1317,7 @@ export class InviteGuest {
         });
       },
       onError: (err) => this._onError(err),
+      onStatusChange: (status) => this._onStatusChange(status),
     });
     session._bindConnection(conn);
 

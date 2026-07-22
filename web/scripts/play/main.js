@@ -502,6 +502,8 @@ class GameController {
     this.mode = 'friend';
     this.opponent = { kind: 'human', name: 'Opponent', rating: 1200 };
 
+    this._showJoinOverlay('Connecting to host...');
+
     try {
       this.peer = new InviteGuest({
         handle: user.handle,
@@ -513,7 +515,16 @@ class GameController {
           this.opponent = { kind: 'human', name: hostHandle || 'Host', rating: hostRating || 1200 };
         },
         onHostDisconnected: () => this._onPeerDisconnect(),
-        onError: (err) => toast({ title: 'Connection failed', message: err.message, kind: 'bad' }),
+        onError: (err) => this._updateJoinStatus(err.message, 'bad'),
+        onStatusChange: (status) => {
+          const msgs = {
+            connecting: 'Connecting to broker...',
+            connected: 'Contacting host...',
+            reconnecting: 'Reconnecting...',
+            failed: 'Connection failed.',
+          };
+          this._updateJoinStatus(msgs[status] || status, status === 'failed' ? 'bad' : 'info');
+        },
       });
       const result = await this.peer.join(code);
       this.myColor = result.myColor;
@@ -521,6 +532,7 @@ class GameController {
       this.opponent = { kind: 'human', name: result.hostHandle || 'Host', rating: result.hostRating || 1200 };
       this.gameId = 'invite-' + code;
 
+      this._hideJoinOverlay();
       this._showGameScreen();
       this._refreshOppPanel();
       this._refreshMePanel();
@@ -532,8 +544,14 @@ class GameController {
         window.history.replaceState(null, '', window.location.pathname);
       }
     } catch (err) {
-      toast({ title: 'Could not join', message: err.message || 'Invalid code or host offline', kind: 'bad' });
-      show($('lobby'));
+      if (this.peer) { try { this.peer.leave(); } catch (_) {} this.peer = null; }
+      const message =
+        (err && err.message) || 'Invalid code or host offline.';
+      this._updateJoinStatus(message, 'bad');
+      const codeRef = code;
+      await this._showJoinErrorModal(message, () => {
+        this.startFriendGame(codeRef);
+      });
     }
   }
 
@@ -562,7 +580,21 @@ class GameController {
           this._startGameFlow();
         },
         onGuestDisconnected: () => this._onPeerDisconnect(),
-        onError: (err) => toast({ title: 'Connection failed', message: err.message, kind: 'bad' }),
+        onError: (err) => {
+          this._updateInviteStatus('Connection failed: ' + err.message, 'bad');
+        },
+        onStatusChange: (status) => {
+          const msgs = {
+            connecting: 'Connecting to broker...',
+            connected: 'Connected. Waiting for opponent...',
+            reconnecting: 'Connection lost, reconnecting...',
+            failed: 'Connection failed. Please try again.',
+          };
+          this._updateInviteStatus(
+            msgs[status] || status,
+            status === 'failed' ? 'bad' : 'info'
+          );
+        },
       });
       const { code, shareUrl } = await this.peer.create();
       this._showInviteWaiting(code, shareUrl);
@@ -592,6 +624,7 @@ class GameController {
         <h2>Waiting for opponent</h2>
         <p class="invite-sub">Share this code or link:</p>
         <div class="invite-code">${code}</div>
+        <div class="invite-status info" id="inviteStatus">Connecting to broker...</div>
         <div class="invite-actions">
           <button type="button" class="btn btn-ghost" id="copyCodeBtn">Copy code</button>
           <button type="button" class="btn btn-ghost" id="copyLinkBtn">Copy link</button>
@@ -620,6 +653,65 @@ class GameController {
   _hideInviteWaiting() {
     const wait = $('inviteWaiting');
     if (wait) wait.setAttribute('hidden', '');
+  }
+
+  _updateInviteStatus(text, kind = 'info') {
+    const el = $('inviteStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'invite-status ' + kind;
+  }
+
+  _showJoinOverlay(message) {
+    let overlay = $('joinOverlay');
+    if (!overlay) {
+      overlay = document.createElement('section');
+      overlay.id = 'joinOverlay';
+      overlay.className = 'invite-waiting';
+      const main = document.querySelector('.play-page') || document.body;
+      main.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <div class="invite-card">
+        <h2>Joining game</h2>
+        <div class="invite-status info" id="joinStatus">${message || 'Connecting to host...'}</div>
+        <div class="spinner-wrap"><div class="spinner"></div></div>
+      </div>
+    `;
+    overlay.removeAttribute('hidden');
+    const lobby = $('lobby');
+    if (lobby) lobby.setAttribute('hidden', '');
+    const game = $('game');
+    if (game) game.setAttribute('hidden', '');
+  }
+
+  _updateJoinStatus(text, kind = 'info') {
+    const el = $('joinStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'invite-status ' + kind;
+  }
+
+  _hideJoinOverlay() {
+    const overlay = $('joinOverlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+  }
+
+  async _showJoinErrorModal(message, onRetry) {
+    const choice = await confirm({
+      title: 'Could not connect to the host',
+      message:
+        message ||
+        'The invite code may be wrong, the host may have left, or your network doesn\u2019t support P2P. Try again or play the engine.',
+      confirmLabel: 'Try again',
+      cancelLabel: 'Play engine',
+    });
+    if (choice) {
+      if (typeof onRetry === 'function') onRetry();
+    } else {
+      this._hideJoinOverlay();
+      this.startBotGame(10);
+    }
   }
 
   _showSearching(msg) {

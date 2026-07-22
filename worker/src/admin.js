@@ -8,7 +8,7 @@ function err(c, status, message, code) {
 }
 
 function clientIp(c) {
-  return c.req.header('CF-Connecting-IP') || c.req.header('X-Real-IP') || 'unknown';
+  return c.req.header('CF-Connecting-IP') || 'unknown';
 }
 
 async function audit(db, adminId, action, targetId, gameId, detail, ip) {

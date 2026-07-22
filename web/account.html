@@ -54,10 +54,19 @@
         <div class="profile-head-row">
           <div class="profile-avatar" id="avatar" aria-hidden="true"></div>
           <div class="profile-info">
-            <h1 class="profile-handle" id="handle">—</h1>
+            <div class="handle-row">
+              <h1 class="profile-handle" id="handle">—</h1>
+              <button class="icon-btn edit-handle" id="changeHandle" type="button" aria-label="Edit handle" title="Edit handle">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+            </div>
             <div class="profile-meta">
               <span class="profile-since" id="memberSince">Member</span>
-              <button class="link-btn" id="changeHandle" type="button">Change handle</button>
+              <span class="meta-dot" aria-hidden="true">·</span>
+              <span class="sync-badge syncing" id="syncBadge">
+                <span class="sync-dot" aria-hidden="true"></span>
+                <span class="sync-text">Checking sync…</span>
+              </span>
             </div>
             <div class="profile-actions">
               <button class="link-btn danger" id="resetProfile" type="button">Reset profile</button>
@@ -65,36 +74,42 @@
           </div>
         </div>
         <div class="profile-rating">
-          <div class="rating-num" id="ratingNum">—</div>
+          <div class="rating-row">
+            <div class="rating-num" id="ratingNum">—</div>
+            <span class="rating-rd" id="ratingRd"></span>
+          </div>
           <div class="rating-label">Live rating</div>
-          <div class="rating-rd" id="ratingRd"></div>
+          <div class="rating-prov" id="ratingProv" hidden>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>Provisional</span>
+          </div>
         </div>
       </div>
 
       <div class="stat-grid" id="statGrid">
-        <div class="stat-tile">
+        <div class="stat-tile tile-wld">
+          <div class="tile-label">Win / Draw / Loss</div>
+          <div class="ratio-bar" id="ratioBar" aria-label="Result ratio"></div>
+          <div class="ratio-legend" id="ratioLegend"></div>
+        </div>
+        <div class="stat-tile tile-games">
           <div class="stat-num" id="statGames">—</div>
           <div class="stat-label">Games</div>
         </div>
-        <div class="stat-tile win">
-          <div class="stat-num" id="statWins">—</div>
-          <div class="stat-label">Wins</div>
-        </div>
-        <div class="stat-tile loss">
-          <div class="stat-num" id="statLosses">—</div>
-          <div class="stat-label">Losses</div>
-        </div>
-        <div class="stat-tile draw">
-          <div class="stat-num" id="statDraws">—</div>
-          <div class="stat-label">Draws</div>
-        </div>
-        <div class="stat-tile">
-          <div class="stat-num" id="statAcc">—</div>
+        <div class="stat-tile tile-acc">
+          <div class="stat-num-row">
+            <span class="stat-num" id="statAcc">—</span>
+            <span class="trend" id="statAccTrend" hidden aria-hidden="true"></span>
+          </div>
           <div class="stat-label">Avg accuracy</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile tile-streak">
           <div class="stat-num" id="statStreak">—</div>
           <div class="stat-label">Current streak</div>
+        </div>
+        <div class="stat-tile tile-form">
+          <div class="tile-label">Recent form</div>
+          <div class="form-dots" id="formDots" aria-label="Last 10 results"></div>
         </div>
       </div>
     </section>
@@ -116,6 +131,11 @@
               <option value="loss">Losses</option>
               <option value="draw">Draws</option>
             </select>
+            <select class="filter" id="sortBy" aria-label="Sort by">
+              <option value="date">Sort: Recent</option>
+              <option value="accuracy-high">Sort: Accuracy ↓</option>
+              <option value="accuracy-low">Sort: Accuracy ↑</option>
+            </select>
           </div>
           <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">Export PGNs</button>
         </div>
@@ -123,12 +143,19 @@
       </div>
 
       <div class="tab-panel" data-panel="leaderboard" role="tabpanel">
+        <div class="lb-toolbar">
+          <div class="lb-rank-banner" id="lbRankBanner" hidden></div>
+          <button class="btn btn-ghost btn-sm lb-refresh" id="lbRefresh" type="button">
+            <svg class="ic-refresh" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
         <div class="leaderboard-table" id="leaderboard"></div>
       </div>
 
       <div class="tab-panel" data-panel="insights" role="tabpanel">
         <div class="insights-grid">
-          <div class="insight-card">
+          <div class="insight-card span-2">
             <h3>Rating over time</h3>
             <div class="rating-chart" id="ratingChart"></div>
           </div>
@@ -140,7 +167,7 @@
             <h3>Time control distribution</h3>
             <div class="tc-chart" id="tcChart"></div>
           </div>
-          <div class="insight-card">
+          <div class="insight-card span-2 mistakes-card">
             <h3>Common mistakes</h3>
             <div class="mistakes-list" id="mistakesList"></div>
           </div>
@@ -163,7 +190,7 @@
         <a href="account.html">Profile</a>
       </nav>
       <p class="footer-note">
-        Your profile is stored locally in your browser. Sign in (when multiplayer ships) to sync across devices.
+        Your profile syncs to the ChessRight server when online. Games are stored locally first, so you never lose a match — even offline.
       </p>
       <p class="footer-copy">© <span id="year"></span> ChessRight. Built for the love of the game.</p>
     </div>

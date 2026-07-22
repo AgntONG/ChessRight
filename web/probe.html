@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>SF NNUE Auto-fetch Test</title></head>
+<body>
+<pre id="out">running...</pre>
+<script type="module">
+import { Engine } from './scripts/play/engine.js';
+const out = document.getElementById('out');
+const log = [];
+function push(s) { log.push(s); out.textContent = log.join('\n'); }
+
+const KIWIPETE = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1';
+
+const eng = new Engine({
+  workerUrl: './assets/stockfish/stockfish-nnue-16-single.js',
+  cdnUrl: null,
+  onError: (e) => push('ERR: ' + e.message),
+});
+await eng.ready();
+const w = eng.worker;
+const rawLines = [];
+w.addEventListener('message', (ev) => { const t = typeof ev.data==='string'?ev.data:''; if(t) rawLines.push(t); });
+
+push('=== Enable NNUE with net file NOW PRESENT as sibling ===');
+rawLines.length = 0;
+let t0 = performance.now();
+w.postMessage('setoption name Use NNUE value true');
+w.postMessage('isready');
+let waited = 0;
+while (!rawLines.includes('readyok') && waited < 30000) {
+  await new Promise(r=>setTimeout(r,150)); waited += 150;
+}
+push('  readyok after ' + waited + 'ms (net load time if any)');
+const dl = rawLines.filter(l => /eval file|download|nnue|loaded|Failed/i.test(l));
+push('  diagnostic: ' + (dl.length ? JSON.stringify(dl) : '(none — silent success)'));
+
+push('=== NNUE depth 18 Kiwipete (compare to classical cp=-104) ===');
+rawLines.length = 0;
+t0 = performance.now();
+const r = await eng.analyze({ fen: KIWIPETE, depth: 18, movetime: 8000 });
+const ms = Math.round(performance.now() - t0);
+push('  NNUE: best='+r.best+' cp='+r.cp+' depth='+r.depth+' '+ms+'ms');
+const info18 = rawLines.filter(l=>l.startsWith('info'));
+const traj = info18.map(l => {
+  const dm = l.match(/depth (\d+)/); const cm = l.match(/cp (-?\d+)/); const nm = l.match(/nps (\d+)/);
+  return (dm?dm[1]:'?')+' '+(cm?cm[1]:'--')+(nm?(' nps='+nm[1]):'');
+}).filter((_,i)=>i%4===0);
+push('  trajectory: ' + traj.join(' | '));
+
+push('=== Same depth 18 again (should be faster, net cached in IDB) ===');
+rawLines.length = 0;
+t0 = performance.now();
+const r2 = await eng.analyze({ fen: KIWIPETE, depth: 18, movetime: 8000 });
+push('  NNUE run2: best='+r2.best+' cp='+r2.cp+' depth='+r2.depth+' '+(Math.round(performance.now()-t0))+'ms');
+
+push('DONE');
+</script>
+</body>
+</html>

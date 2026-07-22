@@ -60,6 +60,9 @@ app.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Admin-Token');
   c.header('Access-Control-Max-Age', '86400');
   if (c.req.method === 'OPTIONS') {
+    if (!reqOrigin || !allowed.includes(reqOrigin)) {
+      return new Response(null, { status: 204 });
+    }
     return new Response(null, {
       status: 204,
       headers: {

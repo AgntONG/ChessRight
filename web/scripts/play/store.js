@@ -15,6 +15,7 @@ const NOUN = [
 const KEY_USER = 'chessright:user';
 const KEY_GAMES = 'chessright:games';
 const KEY_IDX = 'chessright:games:idx';
+const KEY_SYNC = 'chessright:sync';
 
 const DAY_MS = 86400000;
 const C_DECAY = 63.2;
@@ -22,6 +23,10 @@ const RD_MIN = 30;
 const RD_MAX = 350;
 const RD_DEFAULT_OPP = 50;
 const GAMES_CAP = 500;
+
+const API_BASE = 'https://chessright-api.agntlol.workers.dev/api';
+const SYNC_TIMEOUT_MS = 9000;
+const PROVISIONAL_RD = 100;
 
 function lsGet(key) {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -130,10 +135,25 @@ export const store = {
       gamesPlayed: 0,
       estimatedElo: null,
       lastSync: null,
-      lastGameAt: null
+      lastGameAt: null,
+      syncState: 'unknown'
     };
     writeUser(u);
     return u;
+  },
+
+  setUser(next) {
+    if (!next || typeof next !== 'object') return;
+    const cur = readUser() || {};
+    const merged = Object.assign({}, cur, next, { updatedAt: Date.now() });
+    writeUser(merged);
+    return merged;
+  },
+
+  setHandle(handle) {
+    const trimmed = String(handle || '').trim().slice(0, 32);
+    if (!trimmed) return readUser();
+    return this.setUser({ handle: trimmed });
   },
 
   updateRating(delta, opponentRating, result) {
@@ -266,7 +286,69 @@ export const store = {
   },
 
   async syncToServer() {
-    return { synced: 0 };
+    const u = readUser() || this.ensureUser();
+    const games = readGames();
+    const startedAt = Date.now();
+    this.setUser({ syncState: 'syncing' });
+
+    let auth;
+    try {
+      auth = await apiPost('/auth/anonymous', {
+        id: u.id,
+        userId: u.id,
+        token: u.token,
+        handle: u.handle
+      });
+    } catch (err) {
+      markOffline(this, startedAt, err);
+      return { synced: 0, status: 'offline', error: err && err.message };
+    }
+
+    if (!auth || !auth.userId || !auth.token) {
+      markOffline(this, startedAt, new Error('Invalid auth response'));
+      return { synced: 0, status: 'offline', error: 'Invalid auth response' };
+    }
+
+    const serverUid = auth.userId;
+    const serverToken = auth.token;
+
+    let pushed = 0;
+    for (const g of games) {
+      if (!g || g._synced) continue;
+      try {
+        const res = await apiPost('/games', gameToServerShape(g, u), serverToken);
+        if (res && (res.id || (res.game && res.game.id))) {
+          g._synced = true;
+          g._serverId = res.id || (res.game && res.game.id);
+          pushed += 1;
+        }
+      } catch (err) {
+        if (err && err.status === 401) break;
+      }
+    }
+    if (pushed > 0) writeGames(games);
+
+    this.setUser({
+      id: serverUid,
+      token: serverToken,
+      serverId: serverUid,
+      rating: typeof auth.rating === 'number' ? auth.rating : u.rating,
+      lastSync: Date.now(),
+      syncState: 'synced',
+      syncError: null
+    });
+    lsSet(KEY_SYNC, String(startedAt));
+
+    let board = null;
+    try { board = await this.fetchLeaderboard(); } catch (_) {}
+
+    return { synced: pushed, total: games.length, status: 'synced', leaderboard: board };
+  },
+
+  async fetchLeaderboard(limit = 100) {
+    const url = `${API_BASE}/leaderboard?limit=${limit}`;
+    const res = await apiGetJson(url);
+    return res && Array.isArray(res.entries) ? res.entries : [];
   },
 
   clearAll() {
@@ -281,5 +363,93 @@ export const store = {
       games: readGames(),
       exportedAt: Date.now()
     });
+  },
+
+  clearSyncMeta() {
+    lsDel(KEY_SYNC);
+    const u = readUser();
+    if (u) {
+      delete u._synced;
+      writeUser(u);
+    }
   }
 };
+
+async function apiPost(path, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SYNC_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body || {}),
+      signal: ctrl.signal
+    });
+    return await parseJson(res);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function apiGetJson(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SYNC_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    return await parseJson(res);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function parseJson(res) {
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch (_) { data = null; }
+  }
+  if (!res.ok) {
+    const err = new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.code = data && data.code;
+    err.body = data;
+    throw err;
+  }
+  return data;
+}
+
+function gameToServerShape(g, user) {
+  const moves = Array.isArray(g.moves)
+    ? g.moves.map((m) => (typeof m === 'string' ? { san: m } : (m && m.san ? { san: m.san } : m)))
+    : [];
+  const opponent = {
+    name: g.opponentName || 'Unknown',
+    rating: typeof g.opponentRating === 'number' ? g.opponentRating : 1200,
+    kind: g.opponentKind === 'human' ? 'human' : 'bot'
+  };
+  return {
+    result: g.result || 'draw',
+    opponent,
+    color: g.color === 'b' ? 'b' : 'w',
+    moves,
+    accuracy: typeof g.accuracy === 'number' ? g.accuracy : null,
+    pgn: g.pgn || null,
+    opening: g.opening || g.ecoName || null,
+    timeControl: g.timeControl || g.tc || null,
+    durationMs: typeof g.durationMs === 'number' ? g.durationMs : null,
+    startedAt: g.startedAt || g.endedAt || Date.now(),
+    endedAt: g.endedAt || g.startedAt || Date.now(),
+    userRatingAfter: typeof g.userRatingAfter === 'number' ? g.userRatingAfter : (user && user.rating)
+  };
+}
+
+function markOffline(storeObj, startedAt, err) {
+  storeObj.setUser({
+    lastSync: Date.now(),
+    syncState: 'offline',
+    syncError: (err && err.message) || 'Network error'
+  });
+  lsSet(KEY_SYNC, String(startedAt));
+}

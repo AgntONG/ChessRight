@@ -6,23 +6,19 @@ const POLL_GAMES_MS = 5000;
 const POLL_QUEUE_MS = 10000;
 
 const PRANK_LABELS = {
-  force_blunder: 'Force Blunder',
-  board_flip: 'Board Flip',
-  silly_pieces: 'Silly Pieces',
-  fake_brilliancy: 'Fake Brilliancy',
-  stockfish_mode: 'Stockfish Mode',
-  choose_moves: 'Choose Their Moves',
-  fake_ban: 'Fake Ban',
+  flip: 'Board Flip',
+  fake_lag: 'Fake Lag',
+  fog: 'War Fog',
+  piece_swarm: 'Piece Swarm',
+  reverse_pawn: 'Reverse Pawn',
 };
 
 const PRANK_HISTORY_ICONS = {
-  force_blunder: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 L9 9 M14 14 L20 20"/><path d="M4 20 L9 15 M14 10 L20 4"/></svg>',
-  board_flip: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>',
-  silly_pieces: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"/><circle cx="15" cy="9" r="3"/></svg>',
-  fake_brilliancy: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z"/></svg>',
-  stockfish_mode: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="14" r="3"/><circle cx="16" cy="14" r="3"/></svg>',
-  choose_moves: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 L7 7 L21 17"/></svg>',
-  fake_ban: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L4 5 L4 11 C4 16 7 19 12 21 C17 19 20 16 20 11 L20 5 Z"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  flip: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>',
+  fake_lag: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
+  fog: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h18M3 12h18M3 16h18"/></svg>',
+  piece_swarm: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"/><circle cx="15" cy="9" r="3"/><circle cx="12" cy="15" r="3"/></svg>',
+  reverse_pawn: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L12 22 M6 8 L12 2 L18 8"/></svg>',
 };
 
 const PIECE_GLYPH = { k: '\u2654', q: '\u2655', r: '\u2656', b: '\u2657', n: '\u2658', p: '\u2659' };
@@ -37,6 +33,20 @@ const el = (tag, cls, html) => {
 const escapeHtml = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+function _normalizeUser(u) {
+  if (!u || typeof u !== 'object') return u;
+  return {
+    id: u.id || u.userId,
+    handle: u.handle,
+    rating: u.rating,
+    rd: u.rating_rd != null ? u.rating_rd : u.rd,
+    gamesPlayed: u.gamesPlayed != null ? u.gamesPlayed : u.games_played,
+    banned: u.banned != null ? u.banned : u.is_banned === 1 || u.is_banned === true,
+    inGame: u.inGame != null ? u.inGame : u.in_game,
+    active: u.active,
+  };
+}
 
 function parseFenBoard(fen) {
   if (!fen || typeof fen !== 'string') return null;
@@ -470,13 +480,14 @@ class AdminPanel {
   _renderPlayers(users) {
     const body = this.dom.playersBody;
     body.innerHTML = '';
-    this.dom.playersStatCount.textContent = `${users.length} player${users.length === 1 ? '' : 's'}`;
-    if (users.length === 0) {
+    const normalized = users.map(_normalizeUser);
+    this.dom.playersStatCount.textContent = `${normalized.length} player${normalized.length === 1 ? '' : 's'}`;
+    if (normalized.length === 0) {
       this.dom.playersEmpty.hidden = false;
       return;
     }
     this.dom.playersEmpty.hidden = true;
-    for (const u of users) body.appendChild(this._renderPlayerRow(u));
+    for (const u of normalized) body.appendChild(this._renderPlayerRow(u));
   }
 
   _renderPlayerRow(u) {
@@ -501,7 +512,7 @@ class AdminPanel {
 
     const banned = !!u.banned;
     const banBtn = el('button', 'row-btn' + (banned ? '' : ' danger'), banned ? 'Unban' : 'Ban');
-    banBtn.disabled = banned ? false : false;
+    banBtn.disabled = false;
     banBtn.addEventListener('click', () => this._toggleBan(u, banned));
     bar.appendChild(banBtn);
 
@@ -856,8 +867,6 @@ class AdminPanel {
   }
 
   _prankHistoryClass(prank) {
-    if (prank === 'fake_ban') return 'ban';
-    if (prank === 'stockfish_mode') return 'self';
     return '';
   }
 

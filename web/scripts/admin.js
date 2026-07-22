@@ -168,8 +168,17 @@ class AdminPanel {
     this._wireVisibility();
 
     if (this.token) {
-      this.showDashboard();
-      return;
+      try {
+        const check = await fetch(`${API_BASE}/admin/stats`, {
+          headers: { 'X-Admin-Token': this.token },
+        });
+        if (check.ok) {
+          this.showDashboard();
+          return;
+        }
+      } catch (_) {}
+      this.token = null;
+      sessionStorage.removeItem(TOKEN_KEY);
     }
 
     try {

@@ -27,8 +27,6 @@ function resolveAdminId(c) {
 }
 
 export function registerAdminRoutes(app) {
-  app.route('/api/admin/*', (c, next) => next());
-
   app.get('/api/admin/auto-auth', async (c) => {
     const ip = clientIp(c);
     const allowedIps = (c.env.ADMIN_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);

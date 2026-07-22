@@ -1,6 +1,6 @@
 import { toast, modal, confirm, formatRating, formatTime, formatRelativeTime } from './ui.js';
 
-const API_BASE = '/api';
+const API_BASE = 'https://chessright-api.agntlol.workers.dev/api';
 const TOKEN_KEY = 'cr_admin_token';
 const POLL_GAMES_MS = 5000;
 const POLL_QUEUE_MS = 10000;

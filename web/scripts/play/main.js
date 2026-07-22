@@ -13,7 +13,7 @@ const API_BASE_URL = (() => {
     const meta = document.querySelector('meta[name="x-api-base"]');
     if (meta && meta.content) return meta.content.replace(/\/+$/, '');
   } catch (_) {}
-  return 'https://chessright-api.workers.dev';
+  return 'https://chessright-api.agntlol.workers.dev';
 })();
 
 const MATCH_POLL_INTERVAL_MS = 1500;

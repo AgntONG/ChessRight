@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "chessright"
-database_id = "<set-via-wrangler-d1-create>"
+database_id = "2f3b1272-08d0-42e2-adaa-f9f26b84d6ec"
 
 [[durable_objects.bindings]]
 name = "MATCH_QUEUE"
@@ -18,11 +18,11 @@ class_name = "GameRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["MatchQueue"]
+new_sqlite_classes = ["MatchQueue"]
 
 [[migrations]]
 tag = "v2"
-new_classes = ["GameRoom"]
+new_sqlite_classes = ["GameRoom"]
 
 [vars]
 CORS_ORIGIN = "http://localhost:8785"

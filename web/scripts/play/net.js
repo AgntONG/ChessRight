@@ -989,6 +989,10 @@ class InviteSession {
       this._helloResolve = resolve;
       this._helloReject = reject;
     });
+  }
+
+  _startHelloTimer() {
+    if (this._helloTimer || this._helloDone || this._closed) return;
     this._helloTimer = setTimeout(() => {
       const e = new ConnectionError(
         `hello handshake timed out after ${HELLO_TIMEOUT_MS}ms`
@@ -1001,6 +1005,7 @@ class InviteSession {
     if (!this._conn || !this._conn.isOpen) return;
     if (this._helloSent) return;
     this._helloSent = true;
+    this._startHelloTimer();
     this._conn.send({
       t: 'hello',
       handle: this._handle,

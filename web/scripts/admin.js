@@ -245,6 +245,8 @@ class AdminPanel {
   }
 
   showLogin() {
+    const checking = document.getElementById('adminChecking');
+    if (checking) checking.remove();
     this.dom.login.hidden = false;
     this.dom.page.hidden = true;
     this.stopPolling();
@@ -254,6 +256,8 @@ class AdminPanel {
   }
 
   showDashboard() {
+    const checking = document.getElementById('adminChecking');
+    if (checking) checking.remove();
     this.dom.login.hidden = true;
     this.dom.page.hidden = false;
     this.switchTab('games');

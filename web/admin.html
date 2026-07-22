@@ -21,7 +21,13 @@
     <div class="grain"></div>
   </div>
 
-  <section class="admin-login" id="adminLogin">
+  <section class="admin-login" id="adminLogin" hidden>
+  <section class="admin-checking" id="adminChecking" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:9999;">
+    <div style="text-align:center;">
+      <div class="spinner" style="margin:0 auto 16px;"></div>
+      <p style="color:var(--ink-2);font-family:var(--mono);font-size:13px;">Checking access...</p>
+    </div>
+  </section>
     <div class="login-card">
       <div class="login-mark" aria-hidden="true">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

@@ -664,6 +664,15 @@
   border-radius: var(--r-m);
   user-select: all;
 }
+.invite-code.placeholder {
+  color: var(--ink-3);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.invite-actions .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .invite-actions {
   display: flex;
   gap: 10px;

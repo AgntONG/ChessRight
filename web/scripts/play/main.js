@@ -596,6 +596,7 @@ class GameController {
           );
         },
       });
+      this._showInviteWaiting(null, null);
       const { code, shareUrl } = await this.peer.create();
       this._showInviteWaiting(code, shareUrl);
     } catch (err) {
@@ -619,15 +620,16 @@ class GameController {
       const main = document.querySelector('.play-page') || document.body;
       main.appendChild(wait);
     }
+    const displayCode = code || '······';
     wait.innerHTML = `
       <div class="invite-card">
         <h2>Waiting for opponent</h2>
         <p class="invite-sub">Share this code or link:</p>
-        <div class="invite-code">${code}</div>
+        <div class="invite-code${code ? '' : ' placeholder'}">${displayCode}</div>
         <div class="invite-status info" id="inviteStatus">Connecting to broker...</div>
         <div class="invite-actions">
-          <button type="button" class="btn btn-ghost" id="copyCodeBtn">Copy code</button>
-          <button type="button" class="btn btn-ghost" id="copyLinkBtn">Copy link</button>
+          <button type="button" class="btn btn-ghost" id="copyCodeBtn" ${code ? '' : 'disabled'}>Copy code</button>
+          <button type="button" class="btn btn-ghost" id="copyLinkBtn" ${code ? '' : 'disabled'}>Copy link</button>
           <button type="button" class="btn btn-ghost" id="cancelInviteBtn">Cancel</button>
         </div>
         <div class="spinner-wrap"><div class="spinner"></div></div>
@@ -635,12 +637,18 @@ class GameController {
     `;
     wait.removeAttribute('hidden');
 
-    $('copyCodeBtn').onclick = () => {
-      navigator.clipboard.writeText(code).then(() => toast({ title: 'Copied', message: 'Invite code copied', kind: 'good' }));
-    };
-    $('copyLinkBtn').onclick = () => {
-      navigator.clipboard.writeText(shareUrl).then(() => toast({ title: 'Copied', message: 'Invite link copied', kind: 'good' }));
-    };
+    const copyCodeBtn = $('copyCodeBtn');
+    const copyLinkBtn = $('copyLinkBtn');
+    if (code && copyCodeBtn) {
+      copyCodeBtn.onclick = () => {
+        navigator.clipboard.writeText(code).then(() => toast({ title: 'Copied', message: 'Invite code copied', kind: 'good' }));
+      };
+    }
+    if (shareUrl && copyLinkBtn) {
+      copyLinkBtn.onclick = () => {
+        navigator.clipboard.writeText(shareUrl).then(() => toast({ title: 'Copied', message: 'Invite link copied', kind: 'good' }));
+      };
+    }
     $('cancelInviteBtn').onclick = () => {
       if (this.peer) { try { this.peer.cancel(); } catch (_) {} this.peer = null; }
       this._hideInviteWaiting();

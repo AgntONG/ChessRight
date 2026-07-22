@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Your ChessRight profile — rating, game history, leaderboard rank, and playing insights." />
+  <meta name="theme-color" content="#08080c" />
+  <title>Profile — ChessRight</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,500&family=Jost:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles/base.css" />
+  <link rel="stylesheet" href="assets/styles/account.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%9B%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="orb a"></div>
+    <div class="orb b"></div>
+    <div class="orb c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="index.html" class="logo" aria-label="ChessRight home">
+        <span class="logo-mark" aria-hidden="true">♛</span>
+        <span>Chess<em>Right</em></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html#brilliant">The Brilliant Move</a>
+        <a href="index.html#engine">Engine</a>
+        <a href="index.html#features">Features</a>
+        <a href="account.html" class="on">Profile</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="index.html#download" class="btn btn-primary btn-sm">Download</a>
+        <button class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+    <div class="mobile-menu" id="mobileMenu">
+      <a href="index.html#brilliant">The Brilliant Move</a>
+      <a href="index.html#engine">Engine</a>
+      <a href="index.html#features">Features</a>
+      <a href="account.html">Profile</a>
+      <a href="index.html#download" class="btn btn-primary">Download</a>
+    </div>
+  </header>
+
+  <main class="account-page">
+    <section class="profile-head">
+      <div class="profile-card">
+        <div class="profile-head-row">
+          <div class="profile-avatar" id="avatar" aria-hidden="true"></div>
+          <div class="profile-info">
+            <h1 class="profile-handle" id="handle">—</h1>
+            <div class="profile-meta">
+              <span class="profile-since" id="memberSince">Member</span>
+              <button class="link-btn" id="changeHandle" type="button">Change handle</button>
+            </div>
+            <div class="profile-actions">
+              <button class="link-btn danger" id="resetProfile" type="button">Reset profile</button>
+            </div>
+          </div>
+        </div>
+        <div class="profile-rating">
+          <div class="rating-num" id="ratingNum">—</div>
+          <div class="rating-label">Live rating</div>
+          <div class="rating-rd" id="ratingRd"></div>
+        </div>
+      </div>
+
+      <div class="stat-grid" id="statGrid">
+        <div class="stat-tile">
+          <div class="stat-num" id="statGames">—</div>
+          <div class="stat-label">Games</div>
+        </div>
+        <div class="stat-tile win">
+          <div class="stat-num" id="statWins">—</div>
+          <div class="stat-label">Wins</div>
+        </div>
+        <div class="stat-tile loss">
+          <div class="stat-num" id="statLosses">—</div>
+          <div class="stat-label">Losses</div>
+        </div>
+        <div class="stat-tile draw">
+          <div class="stat-num" id="statDraws">—</div>
+          <div class="stat-label">Draws</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-num" id="statAcc">—</div>
+          <div class="stat-label">Avg accuracy</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-num" id="statStreak">—</div>
+          <div class="stat-label">Current streak</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <div class="tab-bar" role="tablist" aria-label="Profile sections">
+        <button class="tab on" role="tab" data-tab="games" aria-selected="true">Game history</button>
+        <button class="tab" role="tab" data-tab="leaderboard" aria-selected="false">Leaderboard</button>
+        <button class="tab" role="tab" data-tab="insights" aria-selected="false">Insights</button>
+        <div class="tab-underline" id="tabUnderline" aria-hidden="true"></div>
+      </div>
+
+      <div class="tab-panel on" data-panel="games" role="tabpanel">
+        <div class="games-toolbar">
+          <div class="left">
+            <select class="filter" id="filterResult" aria-label="Filter by result">
+              <option value="">All results</option>
+              <option value="win">Wins</option>
+              <option value="loss">Losses</option>
+              <option value="draw">Draws</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">Export PGNs</button>
+        </div>
+        <div class="games-list" id="gamesList"></div>
+      </div>
+
+      <div class="tab-panel" data-panel="leaderboard" role="tabpanel">
+        <div class="leaderboard-table" id="leaderboard"></div>
+      </div>
+
+      <div class="tab-panel" data-panel="insights" role="tabpanel">
+        <div class="insights-grid">
+          <div class="insight-card">
+            <h3>Rating over time</h3>
+            <div class="rating-chart" id="ratingChart"></div>
+          </div>
+          <div class="insight-card">
+            <h3>Openings played</h3>
+            <div class="openings-list" id="openingsList"></div>
+          </div>
+          <div class="insight-card">
+            <h3>Time control distribution</h3>
+            <div class="tc-chart" id="tcChart"></div>
+          </div>
+          <div class="insight-card">
+            <h3>Common mistakes</h3>
+            <div class="mistakes-list" id="mistakesList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="logo-mark" aria-hidden="true">♛</span>
+        <span>Chess<em>Right</em></span>
+      </div>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html#brilliant">Brilliant Move</a>
+        <a href="index.html#engine">Engine</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#download">Download</a>
+        <a href="account.html">Profile</a>
+      </nav>
+      <p class="footer-note">
+        Your profile is stored locally in your browser. Sign in (when multiplayer ships) to sync across devices.
+      </p>
+      <p class="footer-copy">© <span id="year"></span> ChessRight. Built for the love of the game.</p>
+    </div>
+  </footer>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <script type="module" src="scripts/account.js"></script>
+</body>
+</html>

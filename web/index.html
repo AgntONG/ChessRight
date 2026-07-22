@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ChessRight — play chess against humans or the engine, track your rating, and discover your brilliancies. Free, open source, no account required to start." />
+  <meta name="theme-color" content="#08080c" />
+  <title>ChessRight — Play Chess. Find Brilliancies.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,500&family=Jost:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles/base.css" />
+  <link rel="stylesheet" href="assets/styles/landing.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%9B%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="orb a"></div>
+    <div class="orb b"></div>
+    <div class="orb c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="#hero" class="logo" aria-label="ChessRight home">
+        <span class="logo-mark" aria-hidden="true">♛</span>
+        <span>Chess<em>Right</em></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="play.html">Play</a>
+        <a href="#brilliant">The Brilliant Move</a>
+        <a href="#engine">Engine</a>
+        <a href="#features">Features</a>
+        <a href="account.html">Profile</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="play.html" class="btn btn-primary btn-sm">Play Now</a>
+        <button class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+    <div class="mobile-menu" id="mobileMenu">
+      <a href="play.html">Play</a>
+      <a href="#brilliant">The Brilliant Move</a>
+      <a href="#engine">Engine</a>
+      <a href="#features">Features</a>
+      <a href="account.html">Profile</a>
+      <a href="play.html" class="btn btn-primary">Play Now</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <div class="pill">
+            <span class="pill-dot"></span>
+            <span>NNUE · 3540 Elo · Open Source</span>
+          </div>
+          <h1 class="hero-title">
+            The engine that<br />
+            finds <span class="shimmer">brilliancies</span>.
+          </h1>
+          <p class="hero-sub">
+            ChessRight pairs a neural-network evaluator with deterministic
+            alpha-beta search to play — and explain — chess at a superhuman level.
+            It sees the move everyone misses. Even <em>23…Qg3!!</em>
+          </p>
+          <div class="hero-cta">
+            <a href="play.html" class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Play Now
+            </a>
+            <a href="#brilliant" class="btn btn-ghost">
+              Watch the brilliant move
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
+          </div>
+          <dl class="hero-stats">
+            <div>
+              <dt>Elo</dt>
+              <dd>3540<span class="suf">+</span></dd>
+            </div>
+            <div>
+              <dt>Nodes / sec</dt>
+              <dd>120<span class="suf">M</span></dd>
+            </div>
+            <div>
+              <dt>Draw vs. Stockfish</dt>
+              <dd>62<span class="suf">%</span></dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="board-wrap">
+          <div class="board-glow"></div>
+          <div class="board-card">
+            <div class="board-header">
+              <div class="player">
+                <span class="pip b"></span>
+                <div>
+                  <div class="player-name">F. Marshall</div>
+                  <div class="player-sub">Breslau · 1912</div>
+                </div>
+              </div>
+              <div class="move-label" id="moveLabel">The Gold Coins Game</div>
+              <div class="player">
+                <span class="pip w"></span>
+                <div>
+                  <div class="player-name">S. Levitsky</div>
+                  <div class="player-sub">DSB Congress</div>
+                </div>
+              </div>
+            </div>
+            <div class="board-frame">
+              <div id="board" class="board" role="img" aria-label="Animated chess board replaying Marshall versus Levitsky, Breslau 1912"></div>
+              <div class="coins" id="coinsLayer" aria-hidden="true"></div>
+              <div class="flash" id="brilliantFlash" aria-hidden="true"></div>
+              <div class="badge" id="brilliantBadge" aria-hidden="true">
+                <span class="stars">★★★</span>
+                <span class="mv">23…Qg3!!</span>
+              </div>
+            </div>
+            <div class="board-footer">
+              <div class="move-list" id="moveList" aria-live="polite"></div>
+              <div class="board-controls">
+                <button class="ctrl" id="replayBtn" aria-label="Replay from start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Replay
+                </button>
+                <button class="ctrl" id="playPauseBtn" aria-label="Pause animation">
+                  <svg id="pauseIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+                  <svg id="playIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                  <span id="playPauseText">Pause</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-track">
+          <span>♛ ALPHA-BETA SEARCH</span><span>·</span>
+          <span>♞ EFFICIENTLY UPDATABLE NNUE</span><span>·</span>
+          <span>♜ UCI PROTOCOL</span><span>·</span>
+          <span>♝ SYZYGY TABLEBASES</span><span>·</span>
+          <span>♚ LATE-MOVE PRUNING</span><span>·</span>
+          <span>♛ ALPHA-BETA SEARCH</span><span>·</span>
+          <span>♞ EFFICIENTLY UPDATABLE NNUE</span><span>·</span>
+          <span>♜ UCI PROTOCOL</span><span>·</span>
+          <span>♝ SYZYGY TABLEBASES</span><span>·</span>
+          <span>♚ LATE-MOVE PRUNING</span><span>·</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="brilliant">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">July 20, 1912 · Breslau</span>
+          <h2>The most beautiful move ever played.</h2>
+          <p class="section-lede">
+            For over a century, one move has topped every "greatest ever" list.
+            Marshall placed his queen <em>en prise</em> three different ways — and
+            every capture loses. Legend says spectators showered the board with gold.
+          </p>
+        </div>
+
+        <div class="brilliant-grid">
+          <article class="brilliant-card">
+            <div class="card-num">01</div>
+            <h3>The threat</h3>
+            <p>
+              After <span class="mono">23…Qg3!!</span>, Black threatens
+              <span class="mono">…Qxh2#</span> — mate in one. White must answer
+              the queen immediately.
+            </p>
+          </article>
+          <article class="brilliant-card">
+            <div class="card-num">02</div>
+            <h3>The trap</h3>
+            <p>
+              Three pieces can capture the queen: the h-pawn, the f-pawn, and
+              White's own queen. Yet every capture walks into forced mate or a
+              lost endgame.
+            </p>
+          </article>
+          <article class="brilliant-card">
+            <div class="card-num">03</div>
+            <h3>The point</h3>
+            <p>
+              The knight on d4 is the silent hero. It delivers the smothered mates
+              via <span class="mono">…Ne2#</span> and <span class="mono">…Nf3+</span>
+              the moment a pawn steps forward.
+            </p>
+          </article>
+        </div>
+
+        <div class="lines-block">
+          <div class="lines-head">
+            <h3>Every defence loses</h3>
+            <p>Levitsky resigned without making another move. Here is what the engine sees after each try:</p>
+          </div>
+          <ul class="lines-list">
+            <li>
+              <span class="line-move">24. hxg3</span>
+              <span class="line-arrow">→</span>
+              <span class="line-result">Ne2#</span>
+              <span class="line-note">Smothered mate — the king is choked by its own pieces.</span>
+            </li>
+            <li>
+              <span class="line-move">24. fxg3</span>
+              <span class="line-arrow">→</span>
+              <span class="line-result">Ne2+ Kh1 Rxf1#</span>
+              <span class="line-note">Back-rank mate on the newly opened f-file.</span>
+            </li>
+            <li>
+              <span class="line-move">24. Qe5</span>
+              <span class="line-arrow">→</span>
+              <span class="line-result">Nf3+ Kh1 Rxh2#</span>
+              <span class="line-note">A knight fork paves the way for the rook.</span>
+            </li>
+            <li>
+              <span class="line-move">24. f4 / f3</span>
+              <span class="line-arrow">→</span>
+              <span class="line-result">Ne2+ Kh1 Qxh2#</span>
+              <span class="line-note">The queen simply takes its rightful square.</span>
+            </li>
+            <li>
+              <span class="line-move">24. Rf1+</span>
+              <span class="line-arrow">→</span>
+              <span class="line-result">Rxf1 Qxh2#</span>
+              <span class="line-note">Even giving up the rook doesn't avert mate on h2.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="engine">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">Under the hood</span>
+          <h2>How ChessRight thinks.</h2>
+          <p class="section-lede">
+            A modern engine is two systems: a <strong>search</strong> that explores
+            millions of positions, and an <strong>evaluation</strong> that scores them.
+            ChessRight runs both at the frontier of what's possible.
+          </p>
+        </div>
+
+        <div class="engine-grid">
+          <article class="engine-card">
+            <div class="engine-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            </div>
+            <h3>Alpha-Beta Search</h3>
+            <p>
+              Prunes whole branches of the move tree that can't change the verdict,
+              reaching 30+ ply in the middlegame. Late-move reductions, null-move
+              pruning, and aspiration windows add another order of magnitude.
+            </p>
+          </article>
+          <article class="engine-card">
+            <div class="engine-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M5 7l2 2M17 7l-2 2M5 17l2-2M17 17l-2-2M9 5l1.5 3M15 5l-1.5 3M9 19l1.5-3M15 19l-1.5-3"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <h3>NNUE Evaluation</h3>
+            <p>
+              An efficiently-updatable neural net scores positions in nanoseconds on
+              the CPU — no GPU required. Trained on billions of self-play positions,
+              it reads piece activity and king safety like a grandmaster.
+            </p>
+          </article>
+          <article class="engine-card">
+            <div class="engine-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </div>
+            <h3>Syzygy Tablebases</h3>
+            <p>
+              Perfect play from seven pieces down. The 50-move rule, distance-to-zero,
+              and DTZ are all handled — endgames stop being a fight and become a lookup.
+            </p>
+          </article>
+          <article class="engine-card">
+            <div class="engine-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </div>
+            <h3>UCI Protocol</h3>
+            <p>
+              Drop ChessRight into any GUI — ChessBase, Arena, cutechess, lichess-bot.
+              It speaks the universal <span class="mono">uci</span> dialect and works
+              everywhere Stockfish does.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="anatomy">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">Anatomy of a move</span>
+          <h2>What the eval bar saw.</h2>
+          <p class="section-lede">
+            At depth 1, <span class="mono">23…Qg3!!</span> looks like a blunder — Black
+            hangs the queen. By depth 30, the search proves it is forced mate or a
+            won endgame in every line. Here is the eval as depth climbs.
+          </p>
+        </div>
+        <div class="anatomy-wrap">
+          <div class="eval-chart" id="evalChart" role="img" aria-label="Evaluation climbing toward a Black win as search depth increases">
+            <div class="eval-y">
+              <span>+5</span><span>+3</span><span>+1</span><span>0</span><span>−1</span><span>−3</span><span>−5</span>
+            </div>
+            <div class="eval-bars" id="evalBars"></div>
+            <div class="eval-x">
+              <span>d1</span><span>d5</span><span>d10</span><span>d15</span><span>d20</span><span>d25</span><span>d30</span>
+            </div>
+          </div>
+          <div class="anatomy-note">
+            <h3>Why a "blunder" becomes a win</h3>
+            <p>
+              The search must prove that <em>every</em> capture of the queen loses.
+              At shallow depth the horizon effect lets White "win the queen" with no
+              downside. By depth 30 the knight's smothered mates and back-rank
+              threats fall inside the search window — and the eval collapses to −M.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="features">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">Built for everyone</span>
+          <h2>From improvers to titled players.</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L4 6v6c0 5 8 8 8 8s8-3 8-8V6l-8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+            <h3>Explainable moves</h3>
+            <p>Every recommendation comes with the principal variation, depth, and centipawn loss — not just an arrow.</p>
+          </article>
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <h3>Real-time analysis</h3>
+            <p>Analyse games live at 30M nodes/sec on a laptop. Cloud mode scales to a full rack for tournament prep.</p>
+          </article>
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+            <h3>Blunder detection</h3>
+            <p>Imports PGNs and flags every inaccuracy, mistake, and blunder alongside the move that should have been played.</p>
+          </article>
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>
+            <h3>Opening book</h3>
+            <p>Weighted against 9 million master games. Plays the latest theory — or your own curated repertoire.</p>
+          </article>
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <h3>Cross-platform</h3>
+            <p>Native binaries for Windows, macOS, and Linux. A web-worker build also runs entirely in the browser.</p>
+          </article>
+          <article class="feature">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <h3>Personal coach</h3>
+            <p>Tracks your weaknesses across games and builds puzzle sets that target your actual gaps.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="download">
+      <div class="section-inner">
+        <div class="cta-card">
+          <div class="cta-glow"></div>
+          <div class="cta-content">
+            <span class="eyebrow">Free · Open Source · No Account Required</span>
+            <h2>Your first game is one click away.</h2>
+            <p>
+              ChessRight runs entirely in your browser. Play the engine, find a
+              human match, or share an invite link — no install, no signup. Your
+              games and rating sync across devices the moment you opt in.
+            </p>
+            <div class="cta-platforms">
+              <a href="play.html" class="platform platform-cta">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span><strong>Play the Engine</strong><small>20 skill levels · instant</small></span>
+              </a>
+              <a href="play.html" class="platform platform-cta">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span><strong>Find a Match</strong><small>Ranked · 4 time controls</small></span>
+              </a>
+              <a href="play.html" class="platform platform-cta">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span><strong>Invite a Friend</strong><small>6-character code</small></span>
+              </a>
+              <a href="account.html" class="platform">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="7 14 11 10 15 14 21 8"/></svg>
+                <span><strong>Leaderboard</strong><small>Top players · live</small></span>
+              </a>
+            </div>
+            <p class="cta-foot">or read the <a href="docs/ARCHITECTURE.md" class="inline-link">architecture docs →</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="logo-mark" aria-hidden="true">♛</span>
+        <span>Chess<em>Right</em></span>
+      </div>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="play.html">Play</a>
+        <a href="account.html">Profile</a>
+        <a href="#brilliant">Brilliant Move</a>
+        <a href="#engine">Engine</a>
+        <a href="#features">Features</a>
+        <a href="docs/ARCHITECTURE.md">Architecture</a>
+        <a href="docs/DEPLOY.md">Deploy</a>
+      </nav>
+      <p class="footer-note">
+        Move replay: <em>Levitsky vs Marshall, Breslau 1912</em>. Built on
+        Stockfish (GPLv3), chess.js, and PeerJS. Hosting on Cloudflare Workers + Pages.
+      </p>
+      <p class="footer-copy">© <span id="year"></span> ChessRight. Built for the love of the game.</p>
+    </div>
+  </footer>
+
+  <script src="scripts/landing.js"></script>
+</body>
+</html>

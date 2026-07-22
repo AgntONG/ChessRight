@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Play chess on ChessRight — against the engine, a matched opponent, or a friend. Real-time analysis, accuracy report, and Glicko rating." />
+  <meta name="theme-color" content="#08080c" />
+  <title>Play — ChessRight</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;1,6..96,500&family=Jost:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles/base.css" />
+  <link rel="stylesheet" href="assets/styles/play.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%9B%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="orb a"></div>
+    <div class="orb b"></div>
+    <div class="orb c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="index.html" class="logo" aria-label="ChessRight home">
+        <span class="logo-mark" aria-hidden="true">♛</span>
+        <span>Chess<em>Right</em></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html#brilliant">The Brilliant Move</a>
+        <a href="index.html#engine">Engine</a>
+        <a href="index.html#features">Features</a>
+        <a href="play.html" aria-current="page">Play</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="play.html" class="btn btn-primary btn-sm" aria-current="page">Play</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="play-page">
+    <section class="lobby" id="lobby">
+      <h1>Start a game</h1>
+      <div class="lobby-grid">
+        <button type="button" class="mode-card" data-mode="bot">
+          <span class="mc-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/><circle cx="12" cy="3" r="1"/></svg>
+          </span>
+          <h3>Play the Engine</h3>
+          <p>Stockfish WASM, 20 skill levels from beginner to grandmaster.</p>
+        </button>
+        <button type="button" class="mode-card" data-mode="human">
+          <span class="mc-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3"/><path d="M22 11l-3 3-2-2"/></svg>
+          </span>
+          <h3>Find a Match</h3>
+          <p>Auto-matchmaking by rating, or share an invite link.</p>
+        </button>
+        <button type="button" class="mode-card" data-mode="friend">
+          <span class="mc-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          </span>
+          <h3>Join with Code</h3>
+          <p>Have a 6-character invite code? Enter it here.</p>
+        </button>
+      </div>
+
+      <div class="config-panel" id="configPanel" hidden></div>
+    </section>
+
+    <section class="game" id="game" hidden>
+      <div class="game-layout">
+        <div class="game-main">
+          <div class="player-panel opp">
+            <span class="pp-avatar" aria-hidden="true">♚</span>
+            <div class="pp-info">
+              <div class="pp-name">Stockfish Lv 12</div>
+              <div class="pp-rating">1850</div>
+            </div>
+            <div class="pp-clock" data-clock="opp">10:00</div>
+            <div class="pp-capture" aria-hidden="true"></div>
+          </div>
+
+          <div class="board-stage">
+            <div class="board-mount" id="boardMount"></div>
+            <div class="thinking" id="thinking" hidden>
+              <div class="spinner" aria-hidden="true"></div>
+              <span>Engine thinking…</span>
+            </div>
+          </div>
+
+          <div class="player-panel me">
+            <span class="pp-avatar" aria-hidden="true">♚</span>
+            <div class="pp-info">
+              <div class="pp-name">SwiftFalcon</div>
+              <div class="pp-rating">1247</div>
+            </div>
+            <div class="pp-clock" data-clock="me">10:00</div>
+            <div class="pp-capture" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <aside class="game-side">
+          <div class="side-card eval-card">
+            <div class="eval-bar" aria-hidden="true">
+              <div class="eval-fill" id="evalFill" style="height: 50%;"></div>
+            </div>
+            <div class="eval-info">
+              <div class="eval-score" id="evalScore">0.0</div>
+              <div class="eval-depth" id="evalDepth">depth 0</div>
+            </div>
+          </div>
+
+          <div class="side-card moves-card">
+            <div class="moves-head">Moves</div>
+            <ol class="moves-list" id="movesList"></ol>
+          </div>
+
+          <div class="side-card controls-card">
+            <button type="button" class="ctrl-btn danger" id="resignBtn">
+              <span>Resign</span><span class="kbd">flag</span>
+            </button>
+            <button type="button" class="ctrl-btn" id="drawBtn">
+              <span>Offer Draw</span><span class="kbd">½</span>
+            </button>
+            <button type="button" class="ctrl-btn" id="flipBtn">
+              <span>Flip Board</span><span class="kbd">⇅</span>
+            </button>
+            <button type="button" class="ctrl-btn" id="takebackBtn">
+              <span>Take Back</span><span class="kbd">↶</span>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="post-game" id="postGame" hidden>
+      <div class="result-card">
+        <div class="result-banner" id="resultBanner">
+          <span class="result-icon" aria-hidden="true">🏆</span>
+          <h2>Victory</h2>
+          <p>Checkmate in 34 moves</p>
+        </div>
+
+        <div class="rating-change">
+          <div class="rating-old">
+            <div class="lbl">Before</div>
+            <div class="val">1247</div>
+          </div>
+          <svg class="rating-arrow" width="28" height="20" viewBox="0 0 28 20" fill="none" aria-hidden="true"><path d="M2 10h22M18 4l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="rating-new">
+            <div class="lbl">After</div>
+            <div class="val">1271</div>
+          </div>
+          <div class="rating-delta pos">+24</div>
+        </div>
+
+        <div class="accuracy-report">
+          <h3>Move quality</h3>
+          <div class="acc-big">
+            <div class="acc-num">87.4%</div>
+            <div class="acc-label">Accuracy</div>
+          </div>
+          <div class="acc-buckets">
+            <div class="bucket" data-class="brilliant">
+              <span class="b-count">0</span>
+              <span class="b-label">Brilliant</span>
+            </div>
+            <div class="bucket" data-class="great">
+              <span class="b-count">0</span>
+              <span class="b-label">Great</span>
+            </div>
+            <div class="bucket" data-class="good">
+              <span class="b-count">0</span>
+              <span class="b-label">Good</span>
+            </div>
+            <div class="bucket" data-class="inaccuracy">
+              <span class="b-count">0</span>
+              <span class="b-label">Inaccuracy</span>
+            </div>
+            <div class="bucket" data-class="mistake">
+              <span class="b-count">0</span>
+              <span class="b-label">Mistake</span>
+            </div>
+            <div class="bucket" data-class="blunder">
+              <span class="b-count">0</span>
+              <span class="b-label">Blunder</span>
+            </div>
+          </div>
+          <div class="est-elo">
+            <span>Estimated strength</span>
+            <strong>1650</strong>
+            <small>Based on move quality, not results</small>
+          </div>
+        </div>
+
+        <div class="post-actions">
+          <button type="button" class="btn btn-ghost" id="reviewBtn">Review game</button>
+          <button type="button" class="btn btn-primary" id="rematchBtn">Play again</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="scripts/play/main.js"></script>
+</body>
+</html>

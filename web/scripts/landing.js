@@ -157,6 +157,19 @@
     delete state[from];
     if (state[to]) delete state[to];
     state[to] = piece;
+    if (from === 'e1' && to === 'g1' && piece && piece.type === 'k') {
+      var rook = state['h1'];
+      if (rook) { delete state['h1']; state['f1'] = rook; }
+    } else if (from === 'e1' && to === 'c1' && piece && piece.type === 'k') {
+      var rookQ = state['a1'];
+      if (rookQ) { delete state['a1']; state['d1'] = rookQ; }
+    } else if (from === 'e8' && to === 'g8' && piece && piece.type === 'k') {
+      var rookB = state['h8'];
+      if (rookB) { delete state['h8']; state['f8'] = rookB; }
+    } else if (from === 'e8' && to === 'c8' && piece && piece.type === 'k') {
+      var rookQB = state['a8'];
+      if (rookQB) { delete state['a8']; state['d8'] = rookQB; }
+    }
   }
 
   function moveToPly(target) {
@@ -352,11 +365,17 @@
     var probe = startingState();
     for (var i = 0; i < BRILLIANT_PLY; i++) {
       var uci = uciPairs[Math.floor(i / 2)][i % 2];
-      var piece = probe[uci.slice(0, 2)];
+      var from = uci.slice(0, 2);
+      var to = uci.slice(2, 4);
+      var piece = probe[from];
       if (!piece) return;
-      delete probe[uci.slice(0, 2)];
-      if (probe[uci.slice(2, 4)]) delete probe[uci.slice(2, 4)];
-      probe[uci.slice(2, 4)] = piece;
+      delete probe[from];
+      if (probe[to]) delete probe[to];
+      probe[to] = piece;
+      if (from === 'e1' && to === 'g1' && piece.type === 'k') { var r = probe['h1']; if (r) { delete probe['h1']; probe['f1'] = r; } }
+      else if (from === 'e1' && to === 'c1' && piece.type === 'k') { var r = probe['a1']; if (r) { delete probe['a1']; probe['d1'] = r; } }
+      else if (from === 'e8' && to === 'g8' && piece.type === 'k') { var r = probe['h8']; if (r) { delete probe['h8']; probe['f8'] = r; } }
+      else if (from === 'e8' && to === 'c8' && piece.type === 'k') { var r = probe['a8']; if (r) { delete probe['a8']; probe['d8'] = r; } }
     }
     var rows = [];
     for (var r = 8; r >= 1; r--) {

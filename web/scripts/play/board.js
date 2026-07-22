@@ -47,6 +47,11 @@ export class Board {
     this.promoOverlay = null;
     this.promoResolver = null;
 
+    this.premoveEnabled = false;
+    this.premoveMode = false;
+    this.premoveQueue = [];
+    this._premoveGhosts = {};
+
     this._build();
     this._wire();
   }
@@ -89,17 +94,57 @@ export class Board {
 
   _wire() {
     this._onPointerDown = (e) => this._handlePointerDown(e);
+    this._onContext = (e) => {
+      if (!this.premoveEnabled) return;
+      if (this.premoveQueue.length > 0) {
+        e.preventDefault();
+        this.clearPremoves();
+      }
+    };
     this.mountEl.addEventListener('pointerdown', this._onPointerDown);
+    this.mountEl.addEventListener('contextmenu', this._onContext);
   }
 
   _interactiveSide(chess) {
     if (!chess) return null;
+    if (this.premoveMode) return this._userColor();
     return chess.turn();
   }
 
+  _userColor() {
+    return this.orientation === 'b' ? 'b' : 'w';
+  }
+
+  _movesForSquare(sq) {
+    if (!this.chess) return [];
+    const piece = this.chess.get(sq);
+    const sideToMove = this.chess.turn();
+    if (!piece) return [];
+    if (piece.color === sideToMove) {
+      return this.chess.moves({ square: sq, verbose: true });
+    }
+    if (this.premoveMode && piece.color === this._userColor()) {
+      const fen = this.chess.fen().replace(/(\s[bw]\s)/, ' ' + piece.color + ' ');
+      let temp = null;
+      try {
+        temp = new Chess(fen);
+        if (temp.turn() !== piece.color) return [];
+        return temp.moves({ square: sq, verbose: true });
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
+  }
+
   _handlePointerDown(e) {
-    if (!this.interactive || !this.chess) return;
+    if (e.button !== undefined && e.button !== 0) return;
     if (this.promoResolver) return;
+    if (!this.chess) return;
+
+    const inPremove = this.premoveMode;
+    if (!this.interactive && !inPremove) return;
+    if (inPremove && !this.premoveEnabled) return;
 
     const sq = this._sqFromEvent(e);
     if (!sq) return;
@@ -109,11 +154,25 @@ export class Board {
 
     if (this.selectedSq && this._isLegalTarget(sq)) {
       e.preventDefault();
-      this._attemptMove(this.selectedSq, sq);
+      if (inPremove) {
+        this._addPremove(this.selectedSq, sq, piece);
+        this._clearSelection();
+      } else {
+        this._attemptMove(this.selectedSq, sq);
+      }
       return;
     }
 
     if (piece && piece.color === side) {
+      if (inPremove) {
+        const idx = this.premoveQueue.findIndex((m) => m.from === sq);
+        if (idx !== -1) {
+          e.preventDefault();
+          this._truncatePremove(idx);
+          this._clearSelection();
+          return;
+        }
+      }
       e.preventDefault();
       this._selectSquare(sq);
       const pcEl = this._pieceElAt(sq);
@@ -173,7 +232,7 @@ export class Board {
     this._clearSelection(false);
     this.selectedSq = sq;
     if (this.squares[sq]) this.squares[sq].classList.add('sel');
-    const moves = this.chess.moves({ square: sq, verbose: true });
+    const moves = this._movesForSquare(sq);
     this.legalForSelected = moves;
     for (const m of moves) {
       const el = this.squares[m.to];
@@ -203,7 +262,7 @@ export class Board {
   }
 
   _beginDrag(sq, pcEl, e) {
-    const move = this.chess.moves({ square: sq, verbose: true });
+    const move = this._movesForSquare(sq);
     if (!move.length) return;
     pcEl.setPointerCapture(e.pointerId);
     pcEl.classList.add('dragging', 'interact');
@@ -231,13 +290,17 @@ export class Board {
       pcEl.removeEventListener('pointerup', onUp);
       pcEl.removeEventListener('pointercancel', onUp);
       pcEl.classList.remove('dragging');
-      // Pointer is captured to the piece element, so ev.target is the piece
-      // (whose dataset.sq is the source square). Resolve the destination by
-      // geometry instead, otherwise _sqFromEvent would always return `sq`.
       const target = this._squareFromPoint(ev.clientX, ev.clientY);
       if (target && target !== sq && this._isLegalTarget(target)) {
-        this._clearSelection();
-        this._attemptMove(sq, target, true);
+        const piece = this.chess.get(sq);
+        if (this.premoveMode) {
+          this._addPremove(sq, target, piece);
+          this._placePiece(pcEl, sq);
+          this._clearSelection();
+        } else {
+          this._clearSelection();
+          this._attemptMove(sq, target, true);
+        }
       } else {
         this._placePiece(pcEl, sq);
         this._clearSelection();
@@ -289,6 +352,76 @@ export class Board {
         promotion,
       });
     }
+  }
+
+  _addPremove(from, to, fromPiece) {
+    const src = fromPiece || this.chess.get(from);
+    let promotion = null;
+    if (src && src.type === 'p') {
+      const rank = parseInt(to[1], 10);
+      if ((src.color === 'w' && rank === 8) || (src.color === 'b' && rank === 1)) {
+        promotion = 'q';
+      }
+    }
+    const idx = this.premoveQueue.findIndex((m) => m.from === from);
+    if (idx !== -1) this.premoveQueue[idx] = { from, to, promotion };
+    else this.premoveQueue.push({ from, to, promotion });
+    this._renderPremoves();
+  }
+
+  setPremoveQueue(queue) {
+    this.premoveQueue = Array.isArray(queue)
+      ? queue.map((m) => ({ from: m.from, to: m.to, promotion: m.promotion || null }))
+      : [];
+    this._renderPremoves();
+  }
+
+  clearPremoves() {
+    this.premoveQueue = [];
+    this._renderPremoves();
+  }
+
+  _truncatePremove(idx) {
+    if (idx < 0) return;
+    this.premoveQueue = this.premoveQueue.slice(0, idx);
+    this._renderPremoves();
+  }
+
+  _renderPremoves() {
+    for (const id in this._premoveGhosts) {
+      const g = this._premoveGhosts[id];
+      if (g && g.parentNode) g.remove();
+    }
+    this._premoveGhosts = {};
+    for (const sq in this.squares) {
+      this.squares[sq].classList.remove('pre-from', 'pre-to');
+    }
+    const seenTo = new Set();
+    for (const m of this.premoveQueue) {
+      if (this.squares[m.from]) this.squares[m.from].classList.add('pre-from');
+      if (this.squares[m.to] && !seenTo.has(m.to)) {
+        this.squares[m.to].classList.add('pre-to');
+        seenTo.add(m.to);
+        this._addGhost(m);
+      }
+    }
+    if (this.onPremoveChange) {
+      try { this.onPremoveChange(this.premoveQueue.length); } catch (_) {}
+    }
+  }
+
+  _addGhost(move) {
+    if (!this.chess) return;
+    const piece = this.chess.get(move.from);
+    if (!piece) return;
+    const el = document.createElement('div');
+    el.className = 'pc ' + piece.color + ' pre-ghost';
+    el.dataset.ghost = '1';
+    el.textContent = GLYPH[piece.type] || '';
+    el.setAttribute('aria-hidden', 'true');
+    this._placePiece(el, move.to);
+    this.mountEl.appendChild(el);
+    this._premoveGhosts[move.to] = el;
   }
 
   setPosition(chess) {
@@ -366,7 +499,8 @@ export class Board {
         this.pieces[id] = el;
         el.dataset.sq = sq;
         this._placePiece(el, sq);
-        if (this.interactive) el.classList.add('interact');
+        const isUser = el.dataset.color === this._userColor();
+        if (this.interactive || (this.premoveMode && isUser)) el.classList.add('interact');
         this.mountEl.appendChild(el);
         usedEls.add(el);
       }
@@ -386,6 +520,7 @@ export class Board {
         delete this.pieces[id];
       }
     }
+    if (this.premoveQueue.length > 0) this._renderPremoves();
   }
 
   animateLastMove(chess) {
@@ -404,6 +539,16 @@ export class Board {
     if (brill && this.squares[brill]) this.squares[brill].classList.add('last-brill');
     if (check && this.squares[check]) this.squares[check].classList.add('check');
     this.lastHighlight = { from, to, check, brill };
+    if (this.premoveQueue.length > 0) {
+      const seenTo = new Set();
+      for (const m of this.premoveQueue) {
+        if (this.squares[m.from]) this.squares[m.from].classList.add('pre-from');
+        if (this.squares[m.to] && !seenTo.has(m.to)) {
+          this.squares[m.to].classList.add('pre-to');
+          seenTo.add(m.to);
+        }
+      }
+    }
   }
 
   setLegalMoves() {}
@@ -415,20 +560,49 @@ export class Board {
     this.pieces = {};
     this.selectedSq = null;
     this.legalForSelected = [];
+    this.premoveQueue = [];
+    this._premoveGhosts = {};
     this.mountEl.innerHTML = '';
     this._build();
     if (this.chess) {
       this.setPosition(this.chess);
       if (this.lastHighlight) this.highlight(this.lastHighlight);
     }
+    this._applyPieceInteractivity();
   }
 
   setInteractive(bool) {
     this.interactive = !!bool;
-    for (const id in this.pieces) {
-      this.pieces[id].classList.toggle('interact', this.interactive);
-    }
+    this.premoveMode = this.premoveEnabled && !this.interactive;
+    this._applyPieceInteractivity();
     if (!this.interactive) this._clearSelection();
+  }
+
+  setPremoveEnabled(bool) {
+    this.premoveEnabled = !!bool;
+    if (!this.premoveEnabled) {
+      this.premoveMode = false;
+      this.clearPremoves();
+    } else {
+      this.premoveMode = !this.interactive;
+    }
+    this._applyPieceInteractivity();
+  }
+
+  _applyPieceInteractivity() {
+    const userColor = this._userColor();
+    for (const id in this.pieces) {
+      const el = this.pieces[id];
+      let on;
+      if (this.interactive) {
+        on = true;
+      } else if (this.premoveMode) {
+        on = el.dataset.color === userColor;
+      } else {
+        on = false;
+      }
+      el.classList.toggle('interact', on);
+    }
   }
 
   async pickPromotion(color) {
@@ -477,11 +651,15 @@ export class Board {
   destroy() {
     if (this.mountEl) {
       this.mountEl.removeEventListener('pointerdown', this._onPointerDown);
+      this.mountEl.removeEventListener('contextmenu', this._onContext);
       this.mountEl.innerHTML = '';
       this.mountEl.classList.remove('board-mount', 'flipped');
     }
     this.squares = {};
     this.pieces = {};
+    this._premoveGhosts = {};
+    this.premoveQueue = [];
+    this.premoveMode = false;
     this.selectedSq = null;
     this.legalForSelected = [];
     this.chess = null;

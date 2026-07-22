@@ -1,0 +1,28 @@
+{
+  "id": "italian-game",
+  "name": "Italian Game",
+  "eco": "C50-C54",
+  "side": "white",
+  "forsyth": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R",
+  "description": "A classical e4 opening where White develops the bishop to c4, eyeing f7 — Black's weakest square. The Italian leads to sharp tactical play and timeless attacks.",
+  "difficulty": "beginner",
+  "moves": [
+    { "san": "e4", "instruction": "Stake a claim in the center and open lines for the bishop and queen." },
+    { "san": "e5", "instruction": "Black claims central space in kind, freeing the kingside pieces." },
+    { "san": "Nf3", "instruction": "Develop with a threat — the knight attacks e5." },
+    { "san": "Nc6", "instruction": "Defend e5 with the knight, completing a natural developing move." },
+    { "san": "Bc4", "instruction": "The Italian move. The bishop aims at f7, Black's most fragile point." },
+    { "san": "Bc5", "instruction": "Mirror White — Giuoco Piano (\"quiet game\"). Black targets f2 in return." },
+    { "san": "c3", "instruction": "Build a pawn chain to support a future d4 advance in the center." },
+    { "san": "Nf6", "instruction": "Develop and add a second attacker to e4, creating tension." },
+    { "san": "d4", "instruction": "Open the center now that Black's pieces are committed." },
+    { "san": "exd4", "instruction": "Capture toward the center, opening the e-file for the Black rook later." },
+    { "san": "cxd4", "instruction": "Recapture, giving White a strong central pawn majority." },
+    { "san": "Bb4+", "instruction": "Check to disrupt White — pinning the c3-knight against the king." },
+    { "san": "Nc3", "instruction": "Block and develop. White accepts doubled pawns in exchange for the bishop pair." },
+    { "san": "Nxe4", "instruction": "Grab the free pawn — this is the critical test of the line." },
+    { "san": "O-O", "instruction": "Castle, sacrificing the pawn back for a lead in development and the open center." },
+    { "san": "Bxc3", "instruction": "Trade and give White doubled c-pawns — White gets the bishop pair in return." }
+  ],
+  "variations": []
+}

@@ -1,0 +1,27 @@
+{
+  "id": "queens-gambit",
+  "name": "Queen's Gambit",
+  "eco": "D06-D69",
+  "side": "white",
+  "description": "Despite the name, no material is truly sacrificed. White offers the c4 pawn temporarily to deflect Black's d5 pawn and establish a dominant central pawn duo. The QGD leads to deep positional play where small advantages accumulate.",
+  "difficulty": "intermediate",
+  "moves": [
+    { "san": "d4", "instruction": "Open the queen's pawn, controlling the center and freeing the c1-bishop." },
+    { "san": "d5", "instruction": "Mirror White, contesting the center symmetrically." },
+    { "san": "c4", "instruction": "The Queen's Gambit. Offer a pawn to deflect d5 and build a pawn majority." },
+    { "san": "e6", "instruction": "The Queen's Gambit Declined. Support d5 and develop, but lock in the c8-bishop." },
+    { "san": "Nc3", "instruction": "Develop and put more pressure on the d5-pawn." },
+    { "san": "Nf6", "instruction": "Develop the knight, attacking e4 and reinforcing d5." },
+    { "san": "Bg5", "instruction": "Pin the knight to the queen, adding a third attacker to d5." },
+    { "san": "Be7", "instruction": "Unpin and develop. Black would otherwise lose the right to castle." },
+    { "san": "e3", "instruction": "Reinforce d4 and open lines for development and castling." },
+    { "san": "O-O", "instruction": "Castle, completing kingside development and bringing the rook to the center." },
+    { "san": "Nf3", "instruction": "Develop the last minor piece and add control over e5 and d4." },
+    { "san": "h6", "instruction": "Question the bishop. Black wants to play ...Ne4 without losing a piece." },
+    { "san": "Bh4", "instruction": "Retreat but keep the pin. White maintains tension rather than releasing it." },
+    { "san": "b6", "instruction": "Prepare to develop the problem c8-bishop along the long diagonal (b7-a8)." },
+    { "san": "cxd5", "instruction": "Open the c-file. White removes Black's central pawn to gain queenside pressure." },
+    { "san": "exd5", "instruction": "Recapture toward the center. The classical QGD main tabiya is reached." }
+  ],
+  "variations": []
+}

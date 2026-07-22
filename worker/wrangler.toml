@@ -1,0 +1,30 @@
+name = "chessright-api"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chessright"
+database_id = "<set-via-wrangler-d1-create>"
+
+[[durable_objects.bindings]]
+name = "MATCH_QUEUE"
+class_name = "MatchQueue"
+
+[[durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["MatchQueue"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["GameRoom"]
+
+[vars]
+CORS_ORIGIN = "http://localhost:8785"
+ALLOWED_WS_ORIGINS = "https://agntong.github.io,http://localhost:8785,http://127.0.0.1:8785"
+MAX_WS_PER_IP = "5"

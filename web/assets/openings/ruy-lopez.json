@@ -1,0 +1,27 @@
+{
+  "id": "ruy-lopez",
+  "name": "Ruy Lopez",
+  "eco": "C60-C99",
+  "side": "white",
+  "description": "One of the oldest and most respected openings in chess. White develops the bishop to b5, pressuring the knight that defends e5. A lifetime of rich, strategic play flows from these first moves.",
+  "difficulty": "beginner",
+  "moves": [
+    { "san": "e4", "instruction": "Control the center with the king's pawn. Opens lines for the bishop and queen." },
+    { "san": "e5", "instruction": "Black mirrors, claiming an equal share of the center and freeing the kingside pieces." },
+    { "san": "Nf3", "instruction": "Develop the knight toward the center and attack e5 — White's first real threat." },
+    { "san": "Nc6", "instruction": "Defend e5 with the knight, matching White's development tempo for tempo." },
+    { "san": "Bb5", "instruction": "The Ruy Lopez. The bishop pins the defender of e5, putting long-term pressure on Black." },
+    { "san": "a6", "instruction": "The Morphy Defense — question the bishop. Gain space and time on the queenside." },
+    { "san": "Ba4", "instruction": "Retreat along the diagonal, keeping the tension on the c6-knight." },
+    { "san": "Nf6", "instruction": "Develop and threaten e4, counterattacking instead of passively defending." },
+    { "san": "O-O", "instruction": "Castle for king safety. White tucks the king away and brings the rook toward the center." },
+    { "san": "Be7", "instruction": "Develop the bishop, preparing to castle and complete kingside development." },
+    { "san": "Re1", "instruction": "Defend e4 with the rook, clearing the back rank for further action." },
+    { "san": "b5", "instruction": "Kick the bishop and gain queenside space — a key theme in the Lopez." },
+    { "san": "Bb3", "instruction": "Bishop retreats but stays active, eyeing the f7 and d5 weak points." },
+    { "san": "d6", "instruction": "Open the diagonal for the c8-bishop and solidify e5 before pushing back." },
+    { "san": "c3", "instruction": "Prepare d4 to build a strong pawn center — the heart of White's plan." },
+    { "san": "O-O", "instruction": "Black castles. The main closed Ruy Lopez starting position has been reached." }
+  ],
+  "variations": []
+}

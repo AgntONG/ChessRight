@@ -1,0 +1,27 @@
+{
+  "id": "sicilian-najdorf",
+  "name": "Sicilian Najdorf",
+  "eco": "B90-B99",
+  "side": "black",
+  "description": "The Najdorf is the most celebrated variation of the Sicilian Defense. Black plays ...a6 to prepare ...b5 expansion, fight for the center, and create asymmetrical winning chances. A favorite of both Kasparov and Fischer.",
+  "difficulty": "intermediate",
+  "moves": [
+    { "san": "e4", "instruction": "White opens the king's pawn, claiming central space and clearing lines." },
+    { "san": "c5", "instruction": "The Sicilian. Black fights for d4 and creates an asymmetrical pawn structure." },
+    { "san": "Nf3", "instruction": "Develop and prepare to support d4 against the c5-pawn." },
+    { "san": "d6", "instruction": "Control e5 and prepare to develop the c8-bishop along the long diagonal." },
+    { "san": "d4", "instruction": "Open the center — the defining moment of every Open Sicilian." },
+    { "san": "cxd4", "instruction": "Trade toward the center. Black gets a half-open c-file for the queenside attack." },
+    { "san": "Nxd4", "instruction": "Recapture with the knight, centralizing in a single move." },
+    { "san": "Nf6", "instruction": "Develop and attack e4, forcing White to clarify the pawn structure." },
+    { "san": "Nc3", "instruction": "Defend e4 and complete a piece of development." },
+    { "san": "a6", "instruction": "The Najdorf. Control b5, prepare ...b5 expansion, and secure the queenside." },
+    { "san": "Be2", "instruction": "A classical setup — develop the bishop and prepare to castle." },
+    { "san": "e5", "instruction": "Strike in the center. Black gains space and creates a grip on d4." },
+    { "san": "Nb3", "instruction": "Retreat the knight — d4 is no longer a comfortable square after ...e5." },
+    { "san": "Be7", "instruction": "Develop and prepare to castle, completing kingside development." },
+    { "san": "O-O", "instruction": "Castle to safety. White is now ready for a kingside initiative." },
+    { "san": "O-O", "instruction": "Black castles too. The main Najdorf tabiya has been reached — both sides race to attack." }
+  ],
+  "variations": []
+}

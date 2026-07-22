@@ -5,7 +5,20 @@ import { store } from './store.js';
 import { analyzeGame, accuracyToElo } from './accuracy.js';
 import { Clock } from './clock.js';
 import { InviteHost, InviteGuest, parseInviteFromUrl } from './net.js';
+import { GameSocket } from './ws.js';
 import { toast, confirm, formatTime } from '../ui.js';
+
+const API_BASE_URL = (() => {
+  try {
+    const meta = document.querySelector('meta[name="x-api-base"]');
+    if (meta && meta.content) return meta.content.replace(/\/+$/, '');
+  } catch (_) {}
+  return 'https://chessright-api.workers.dev';
+})();
+
+const MATCH_POLL_INTERVAL_MS = 1500;
+const MATCH_POLL_TIMEOUT_MS = 120000;
+const SERVER_HEALTH_TIMEOUT_MS = 5000;
 
 const GLYPH = { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' };
 
@@ -80,8 +93,12 @@ class GameController {
     this.timeControl = TIME_CONTROLS.rapid;
     this.user = null;
     this.peer = null;
+    this.socket = null;
     this.gameId = null;
     this.drawOffered = null;
+    this.serverOnline = false;
+    this._matchTicketAbort = null;
+    this._serverRatingDelta = null;
   }
 
   async init() {
@@ -103,6 +120,8 @@ class GameController {
     this._wirePostGame();
     this._refreshMePanel();
 
+    this._checkServerHealth();
+
     const joinCode = parseInviteFromUrl();
     if (joinCode) {
       const friendCard = document.querySelector('[data-mode="friend"]');
@@ -116,6 +135,10 @@ class GameController {
     const cards = document.querySelectorAll('.mode-card');
     cards.forEach((card) => {
       card.addEventListener('click', () => {
+        if (card.classList.contains('disabled') || card.disabled) {
+          toast({ title: 'Server offline', message: 'Matchmaking is unavailable right now. Try the engine or a friend.', kind: 'bad' });
+          return;
+        }
         cards.forEach((c) => c.classList.remove('selected'));
         card.classList.add('selected');
         this._renderConfig(card.dataset.mode);
@@ -135,6 +158,9 @@ class GameController {
     } else if (mode === 'friend') {
       panel.innerHTML = this._friendConfigHtml();
       this._wireFriendConfig();
+    } else if (mode === 'match') {
+      panel.innerHTML = this._matchConfigHtml();
+      this._wireMatchConfig();
     }
   }
 
@@ -187,6 +213,29 @@ class GameController {
       </div>
       <p class="friend-note">Playing a friend is the best way to learn. Share your link and start a game in seconds.</p>
     `;
+  }
+
+  _matchConfigHtml() {
+    const rating = Math.round((this.user && this.user.rating) || 1200);
+    return `
+      <div class="cfg-head">
+        <span class="cfg-title">Find a match</span>
+        <span class="cfg-sub">Ranked \u00b7 server-relay \u00b7 rating ${rating}</span>
+      </div>
+      <div class="cfg-row">
+        <label class="cfg-label">Time control</label>
+        <div class="tc-grid" id="tcGrid">${this._tcButtonsHtml('rapid')}</div>
+      </div>
+      <div class="cfg-foot">
+        <button class="btn btn-primary" id="searchMatchBtn">Search for a game</button>
+      </div>
+    `;
+  }
+
+  _wireMatchConfig() {
+    this._wireTcGrid();
+    const search = $('searchMatchBtn');
+    if (search) search.addEventListener('click', () => this.startMatchedGame(this.timeControl));
   }
 
   _tcButtonsHtml(selectedKey) {
@@ -358,6 +407,11 @@ class GameController {
 
     if (this.chess.isGameOver()) {
       this._resolveGameEnd();
+      return;
+    }
+    if (this.chess.turn() === this.myColor &&
+        this.board && this.board.premoveQueue.length > 0) {
+      this._executePremoves();
     }
   }
 
@@ -509,6 +563,326 @@ class GameController {
     }
   }
 
+  async _checkServerHealth() {
+    if (!this._supportsFetch()) {
+      this._setMatchCardAvailability(false);
+      return;
+    }
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), SERVER_HEALTH_TIMEOUT_MS);
+      const res = await fetch(API_BASE_URL + '/api/health', {
+        method: 'GET',
+        signal: ctrl.signal,
+        headers: { Accept: 'application/json' },
+      });
+      clearTimeout(timer);
+      this._setMatchCardAvailability(res.ok);
+    } catch (_) {
+      this._setMatchCardAvailability(false);
+    }
+  }
+
+  _supportsFetch() {
+    return typeof fetch === 'function' && typeof WebSocket === 'function';
+  }
+
+  _setMatchCardAvailability(online) {
+    this.serverOnline = !!online;
+    const card = document.querySelector('.mode-card[data-mode="match"]');
+    if (!card) return;
+    if (this.serverOnline) {
+      card.classList.remove('disabled');
+      card.removeAttribute('aria-disabled');
+      card.removeAttribute('title');
+    } else {
+      card.classList.add('disabled');
+      card.setAttribute('aria-disabled', 'true');
+      card.setAttribute('title', 'Server offline');
+    }
+    if (this.mode === 'match' && !this.serverOnline) {
+      const panel = $('configPanel');
+      if (panel) {
+        panel.innerHTML = '<div class="cfg-head"><span class="cfg-title">Server offline</span><span class="cfg-sub">Matchmaking is unavailable</span></div>';
+      }
+    }
+  }
+
+  async startMatchedGame(timeControl) {
+    if (!this.serverOnline) {
+      toast({ title: 'Server offline', message: 'Matchmaking is unavailable right now.', kind: 'bad' });
+      return;
+    }
+
+    const user = store.ensureUser();
+    const tc = timeControl || this.timeControl || TIME_CONTROLS.rapid;
+    const tcKey = Object.keys(TIME_CONTROLS).find((k) => TIME_CONTROLS[k] === tc) || 'rapid';
+
+    this._resetState();
+    this.mode = 'match';
+    this.timeControl = tc;
+    this.opponent = { kind: 'human', name: 'Searching\u2026', rating: 0 };
+
+    this._showMatchOverlay('Searching for an opponent\u2026');
+
+    const ctrl = new AbortController();
+    this._matchTicketAbort = ctrl;
+
+    let ticket;
+    try {
+      ticket = await this._matchQueue(user, tcKey, ctrl.signal);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      this._hideMatchOverlay();
+      toast({ title: 'Could not queue', message: (err && err.message) || 'Matchmaking failed.', kind: 'bad' });
+      return;
+    }
+
+    if (ctrl.signal.aborted) return;
+
+    this._updateMatchStatus('Opponent found. Connecting\u2026');
+
+    let match;
+    try {
+      match = await this._matchPoll(ticket.ticketId, ctrl.signal);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      this._hideMatchOverlay();
+      toast({ title: 'Matchmaking failed', message: (err && err.message) || 'No opponent found.', kind: 'bad' });
+      return;
+    }
+
+    if (ctrl.signal.aborted) return;
+
+    this.myColor = match.myColor === 'b' ? 'b' : 'w';
+    this.botColor = this.myColor === 'w' ? 'b' : 'w';
+    this.opponent = {
+      kind: 'human',
+      name: (match.opponent && match.opponent.handle) || 'Opponent',
+      rating: (match.opponent && match.opponent.rating) || 1200,
+    };
+    this.gameId = match.gameId;
+
+    const serverUrl = match.serverUrl || API_BASE_URL;
+
+    this.socket = new GameSocket({
+      serverUrl,
+      gameId: match.gameId,
+      token: user.token,
+      userId: user.id,
+      onMove: (mv) => this._onSocketMove(mv),
+      onClock: (clock) => this._onSocketClock(clock),
+      onGameOver: (result) => this._onSocketGameOver(result),
+      onDrawOffer: () => this._onRemoteDrawOffer(),
+      onPrank: (prankType) => this._onPrank(prankType),
+      onDisconnect: (info) => this._onSocketOpponentDisconnect(info),
+      onReconnect: () => this._onSocketOpponentReconnect(),
+      onStatus: (status) => this._onSocketStatus(status),
+      onError: (err) => toast({ title: 'Connection issue', message: err.message, kind: 'bad' }),
+    });
+
+    try {
+      await this.socket.connect();
+    } catch (err) {
+      this._hideMatchOverlay();
+      toast({ title: 'Connection failed', message: (err && err.message) || 'Could not reach the game server.', kind: 'bad' });
+      return;
+    }
+
+    this._hideMatchOverlay();
+    this._showGameScreen();
+    this._refreshOppPanel();
+    this._refreshMePanel();
+    this._initBoard();
+    this._initClocks();
+    this._startGameFlow();
+  }
+
+  async _matchQueue(user, tcKey, signal) {
+    const res = await fetch(API_BASE_URL + '/api/match/queue', {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        rating: Math.round(user.rating || 1200),
+        timeControl: tcKey,
+        peerId: user.id,
+        handle: user.handle,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await this._safeReadError(res);
+      throw new Error(txt || ('Queue rejected (' + res.status + ')'));
+    }
+    return res.json();
+  }
+
+  async _matchPoll(ticketId, signal) {
+    const url = API_BASE_URL + '/api/match/poll/' + encodeURIComponent(ticketId);
+    const deadline = Date.now() + MATCH_POLL_TIMEOUT_MS;
+    let firstDelay = 300;
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      await new Promise((r) => setTimeout(r, firstDelay));
+      firstDelay = MATCH_POLL_INTERVAL_MS;
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      let res;
+      try {
+        res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+      } catch (err) {
+        if (err && err.name === 'AbortError') throw err;
+        continue;
+      }
+      if (res.status === 202) {
+        this._updateMatchStatus('Still searching\u2026');
+        continue;
+      }
+      if (res.ok) {
+        return res.json();
+      }
+      if (res.status === 404 || res.status === 410) {
+        const txt = await this._safeReadError(res);
+        throw new Error(txt || 'Matchmaking ticket expired.');
+      }
+      const txt = await this._safeReadError(res);
+      throw new Error(txt || ('Poll failed (' + res.status + ')'));
+    }
+    throw new Error('Timed out searching for an opponent.');
+  }
+
+  async _safeReadError(res) {
+    try {
+      const data = await res.json();
+      return (data && (data.error || data.message)) || null;
+    } catch (_) {
+      try { return await res.text(); } catch (_) { return null; }
+    }
+  }
+
+  _onSocketMove(mv) {
+    if (!mv) return;
+    if (mv.rejected) {
+      toast({ title: 'Move rejected', message: mv.reason || 'The server rejected that move.', kind: 'bad' });
+      return;
+    }
+    if (mv.resume) {
+      return;
+    }
+    this._applyRemoteMove({ from: mv.from, to: mv.to, promotion: mv.promotion });
+  }
+
+  _onSocketClock(clock) {
+    if (!clock || !this.clock) return;
+    const w = typeof clock.w === 'number' ? clock.w : null;
+    const b = typeof clock.b === 'number' ? clock.b : null;
+    if (w != null) this.clock.remaining.w = Math.max(0, w);
+    if (b != null) this.clock.remaining.b = Math.max(0, b);
+    if (w != null) this._updateClockDisplay('w', w / 1000);
+    if (b != null) this._updateClockDisplay('b', b / 1000);
+  }
+
+  _onSocketGameOver(result) {
+    if (this.ended) return;
+    const r = (result && result.result) || 'draw';
+    const ending = (result && result.ending) || 'unknown';
+    if (result && result.ratingDelta != null) {
+      this._serverRatingDelta = result.ratingDelta;
+    }
+    this._endGame(r, ending);
+  }
+
+  _onSocketOpponentDisconnect(info) {
+    if (this.ended) return;
+    const secs = info && typeof info.reconnectIn === 'number'
+      ? Math.max(0, Math.round(info.reconnectIn / 1000))
+      : null;
+    if (info && info.permanent) {
+      toast({ title: 'Opponent left', message: 'Game abandoned.', kind: 'bad' });
+      this._endGame('win', 'abandoned');
+      return;
+    }
+    toast({
+      title: 'Opponent disconnected',
+      message: secs != null ? 'Reconnecting\u2026 (' + secs + 's)' : 'Waiting for opponent to reconnect.',
+      kind: 'info',
+    });
+    if (this.clock) this.clock.stop();
+  }
+
+  _onSocketOpponentReconnect() {
+    if (this.ended) return;
+    toast({ title: 'Opponent reconnected', message: 'The game resumes.', kind: 'good' });
+    if (this.clock && !this.ended) {
+      this.clock.userStopped = false;
+      try { this.clock._startTimer(); } catch (_) {}
+    }
+  }
+
+  _onSocketStatus(status) {
+    if (status === 'reconnecting') {
+      toast({ title: 'Reconnecting', message: 'Restoring the connection\u2026', kind: 'info' });
+    } else if (status === 'error') {
+      toast({ title: 'Connection lost', message: 'Could not restore the game session.', kind: 'bad' });
+    }
+  }
+
+  _onPrank(prankType) {
+    if (!prankType) return;
+    toast({ title: 'Prank!', message: 'A mysterious force interferes: ' + prankType, kind: 'info' });
+  }
+
+  _showMatchOverlay(message) {
+    let overlay = $('matchOverlay');
+    if (!overlay) {
+      overlay = document.createElement('section');
+      overlay.id = 'matchOverlay';
+      overlay.className = 'invite-waiting';
+      const main = document.querySelector('.play-page') || document.body;
+      main.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <div class="invite-card">
+        <h2>Finding a match</h2>
+        <div class="invite-status info" id="matchStatus">${message || 'Searching\u2026'}</div>
+        <div class="invite-actions">
+          <button type="button" class="btn btn-ghost" id="cancelMatchBtn">Cancel</button>
+        </div>
+        <div class="spinner-wrap"><div class="spinner"></div></div>
+      </div>
+    `;
+    overlay.removeAttribute('hidden');
+    const lobby = $('lobby');
+    if (lobby) lobby.setAttribute('hidden', '');
+    const game = $('game');
+    if (game) game.setAttribute('hidden', '');
+    const cancel = $('cancelMatchBtn');
+    if (cancel) cancel.addEventListener('click', () => this._cancelMatchmaking());
+  }
+
+  _updateMatchStatus(text, kind = 'info') {
+    const el = $('matchStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'invite-status ' + kind;
+  }
+
+  _hideMatchOverlay() {
+    const overlay = $('matchOverlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+  }
+
+  _cancelMatchmaking() {
+    if (this._matchTicketAbort) {
+      try { this._matchTicketAbort.abort(); } catch (_) {}
+      this._matchTicketAbort = null;
+    }
+    if (this.socket) { try { this.socket.close(); } catch (_) {} this.socket = null; }
+    this._hideMatchOverlay();
+    this._resetState();
+    const lob = $('lobby');
+    if (lob) lob.removeAttribute('hidden');
+  }
+
   _fillInviteCode(code, shareUrl) {
     const codeEl = document.querySelector('.invite-code');
     if (codeEl && code) {
@@ -646,7 +1020,14 @@ class GameController {
     this.ended = false;
     this.drawOffered = null;
     this.gameId = null;
+    this._serverRatingDelta = null;
+    this._updatePremoveIndicator(0);
     if (this.peer) { try { this.peer.close(); } catch (_) {} this.peer = null; }
+    if (this.socket) { try { this.socket.close(); } catch (_) {} this.socket = null; }
+    if (this._matchTicketAbort) {
+      try { this._matchTicketAbort.abort(); } catch (_) {}
+      this._matchTicketAbort = null;
+    }
     if (this.clock) { this.clock.destroy(); this.clock = null; }
     if (this.engine) {
       try { this.engine.quit(); } catch (_) {}
@@ -658,14 +1039,48 @@ class GameController {
     const mount = $('boardMount');
     if (!mount) return;
     if (this.board) { try { this.board.destroy(); } catch (_) {} this.board = null; }
+    this._ensurePremoveIndicator();
     this.board = new Board({
       mountEl: mount,
       orientation: this.myColor,
       interactive: true,
       onMove: (mv) => this._onUserMoveAttempt(mv),
     });
+    this.board.onPremoveChange = (n) => this._updatePremoveIndicator(n);
+    const humanMode = this.mode === 'bot' || this.mode === 'friend';
+    this.board.setPremoveEnabled(humanMode);
     this.board.setPosition(this.chess);
     this._renderMoves();
+  }
+
+  _ensurePremoveIndicator() {
+    if (this._premoveIndicatorEl) return this._premoveIndicatorEl;
+    const el = document.createElement('div');
+    el.className = 'premove-indicator';
+    el.textContent = '0 premoves queued';
+    el.style.display = 'none';
+    const stage = document.querySelector('.board-stage');
+    if (stage && stage.parentNode) {
+      stage.parentNode.insertBefore(el, stage.nextSibling);
+    } else {
+      const main = document.querySelector('.game-main');
+      if (main) main.appendChild(el);
+    }
+    this._premoveIndicatorEl = el;
+    return el;
+  }
+
+  _updatePremoveIndicator(count) {
+    const el = this._ensurePremoveIndicator();
+    if (!el) return;
+    if (count > 0) {
+      el.textContent = count + (count === 1 ? ' premove queued' : ' premoves queued');
+      el.classList.add('show');
+      el.style.display = '';
+    } else {
+      el.classList.remove('show');
+      el.style.display = 'none';
+    }
   }
 
   _initClocks() {
@@ -706,6 +1121,28 @@ class GameController {
     if (mePanel) mePanel.classList.toggle('on', meIsOn);
     if (oppPanel) oppPanel.classList.toggle('on', !meIsOn);
     if (this.board) this.board.setInteractive(meIsOn && !this.ended);
+    if (meIsOn && !this.ended && this.board && this.board.premoveQueue.length > 0) {
+      this._executePremoves();
+    }
+  }
+
+  _executePremoves() {
+    if (!this.board || !this.chess) return;
+    while (this.board.premoveQueue.length > 0) {
+      if (this.ended) { this.board.clearPremoves(); return; }
+      if (this.chess.turn() !== this.myColor) break;
+      const pre = this.board.premoveQueue[0];
+      const legalMoves = this.chess.moves({ verbose: true });
+      const isLegal = legalMoves.some((m) => m.from === pre.from && m.to === pre.to);
+      if (!isLegal) {
+        this.board.clearPremoves();
+        break;
+      }
+      this.board.premoveQueue.shift();
+      this.board._renderPremoves();
+      this._onUserMoveAttempt({ from: pre.from, to: pre.to, promotion: pre.promotion });
+      if (this.ended) break;
+    }
   }
 
   _updateClockDisplay(side, remaining) {
@@ -758,6 +1195,8 @@ class GameController {
       if (this.clock) {
         this.peer.send({ t: 'clock', color: this.myColor, remaining: this.clock.getRemaining(this.myColor) });
       }
+    } else if (this.socket && this.socket.isOpen) {
+      this.socket.sendMove(from, to, promotion || 'q');
     }
 
     if (this.chess.isGameOver()) {
@@ -1004,7 +1443,11 @@ class GameController {
     if (this.ended) return;
     this.ended = true;
     if (this.clock) this.clock.stop();
-    if (this.board) this.board.setInteractive(false);
+    if (this.board) {
+      this.board.clearPremoves();
+      this.board.setInteractive(false);
+    }
+    this._updatePremoveIndicator(0);
     this._setThinking(false);
 
     const oppRating = (this.opponent && this.opponent.rating) || 1200;
@@ -1019,9 +1462,17 @@ class GameController {
     try {
       const before = store.getUser() || this.user;
       oldRating = Math.round(before.rating || 1200);
-      const updated = store.updateRating(0, oppRating, result);
-      newRating = Math.round((updated && updated.rating) || oldRating);
-      delta = newRating - oldRating;
+      if (this.mode === 'match' && this._serverRatingDelta != null) {
+        delta = Math.round(this._serverRatingDelta);
+        newRating = Math.max(0, oldRating + delta);
+        try {
+          store.updateRating(delta, oppRating, result);
+        } catch (_) {}
+      } else {
+        const updated = store.updateRating(0, oppRating, result);
+        newRating = Math.round((updated && updated.rating) || oldRating);
+        delta = newRating - oldRating;
+      }
       if (analysis.accuracy != null) {
         try { store.setEstimatedElo(estElo); } catch (_) {}
       }
@@ -1054,6 +1505,11 @@ class GameController {
     hide($('game'));
     show($('postGame'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (this.socket) {
+      try { this.socket.close(); } catch (_) {}
+      this.socket = null;
+    }
   }
 
   _analyzeMyMoves() {
@@ -1261,6 +1717,8 @@ class GameController {
       if (!ok) return;
       if (this.peer && this.peer.isOpen) {
         try { this.peer.send({ t: 'resign' }); } catch (_) {}
+      } else if (this.socket && this.socket.isOpen) {
+        try { this.socket.sendResign(); } catch (_) {}
       }
       this._endGame('loss', 'resign');
     });
@@ -1274,6 +1732,14 @@ class GameController {
         const accept = cp != null && Math.abs(cp) < 60;
         if (accept) this._endGame('draw', 'agreement');
         else toast({ title: 'Draw declined', message: 'The engine plays on.', kind: 'info' });
+      } else if (this.socket && this.socket.isOpen) {
+        if (this.drawOffered && this.drawOffered !== this.myColor) {
+          try { this.socket.sendDrawAccept(); } catch (_) {}
+          return;
+        }
+        this.drawOffered = this.myColor;
+        try { this.socket.sendDrawOffer(); } catch (_) {}
+        toast({ title: 'Draw offered', message: 'Waiting for your opponent.', kind: 'info' });
       } else if (this.peer && this.peer.isOpen) {
         if (this.drawOffered && this.drawOffered !== this.myColor) {
           this._endGame('draw', 'agreement');
@@ -1317,6 +1783,7 @@ class GameController {
     this.board.setPosition(this.chess);
     this._renderMoves();
     if (this.clock) this.clock.onMove(this.chess.turn());
+    if (this.board) this.board.clearPremoves();
     toast({ title: 'Move taken back', message: 'It is your move again.', kind: 'good' });
   }
 

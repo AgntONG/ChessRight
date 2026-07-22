@@ -1,0 +1,27 @@
+{
+  "id": "caro-kann",
+  "name": "Caro-Kann Defense",
+  "eco": "B10-B19",
+  "side": "black",
+  "description": "A solid, resilient defense where Black prepares to challenge the center with ...d5 from a stable base. Less tactical than the Sicilian but more dynamic than the French — the Caro-Kann rewards patience and good endgame technique.",
+  "difficulty": "beginner",
+  "moves": [
+    { "san": "e4", "instruction": "Claim the center and open lines for the bishop and queen." },
+    { "san": "c6", "instruction": "The Caro-Kann. Prepare ...d5 with pawn support from c6." },
+    { "san": "d4", "instruction": "Build a broad pawn center, accepting the challenge." },
+    { "san": "d5", "instruction": "Strike at the center. The defining move of the Caro-Kann." },
+    { "san": "Nc3", "instruction": "Defend e4 and develop a piece toward the center." },
+    { "san": "dxe4", "instruction": "Trade in the center, opening the c8-bishop's diagonal." },
+    { "san": "Nxe4", "instruction": "Recapture with the knight — the Classical variation." },
+    { "san": "Bf5", "instruction": "Develop the bishop before castling, while the e6-square is still free." },
+    { "san": "Ng3", "instruction": "Attack the bishop and weaken its grip, gaining a tempo." },
+    { "san": "Bg6", "instruction": "Retreat the bishop to a safe diagonal that still eyes the queenside." },
+    { "san": "h4", "instruction": "Gain space on the kingside and threaten h5 to undermine Black's structure." },
+    { "san": "h6", "instruction": "Secure the g5-square and prevent any knight jumps into that square." },
+    { "san": "Nf3", "instruction": "Develop the kingside knight and prepare to castle." },
+    { "san": "Nd7", "instruction": "Avoid the ...Ngf6 jump (which walks into checks) and keep flexibility." },
+    { "san": "Bc4", "instruction": "Place the bishop on a strong diagonal, eyeing f7 and supporting attack." },
+    { "san": "e6", "instruction": "Solidify the center and open another path for the f8-bishop." }
+  ],
+  "variations": []
+}

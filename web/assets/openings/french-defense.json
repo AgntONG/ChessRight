@@ -1,0 +1,27 @@
+{
+  "id": "french-defense",
+  "name": "French Defense",
+  "eco": "C00-C19",
+  "side": "black",
+  "description": "A strategic defense built on a rock-solid pawn chain. Black accepts a constrained light-squared bishop in exchange for central stability and clear attacking plans on the queenside. The Winawer variation leads to some of the most unbalanced play in chess.",
+  "difficulty": "beginner",
+  "moves": [
+    { "san": "e4", "instruction": "Stake the king's pawn claim in the center of the board." },
+    { "san": "e6", "instruction": "The French Defense. Prepare ...d5 with solid pawn support." },
+    { "san": "d4", "instruction": "Build a strong pawn duo in the center, the natural response." },
+    { "san": "d5", "instruction": "Strike at e4. Black challenges the center head-on." },
+    { "san": "Nc3", "instruction": "Defend e4 and develop. The most principled reply." },
+    { "san": "Bb4", "instruction": "The Winawer. Pin the knight — Black removes a key defender of e4." },
+    { "san": "e5", "instruction": "Push forward. White accepts a structural cost to gain space and the initiative." },
+    { "san": "c5", "instruction": "Undermine the d4-pawn, which has been left in need of support." },
+    { "san": "a3", "instruction": "Question the bishop. White is willing to accept doubled pawns for the bishop pair." },
+    { "san": "Bxc3", "instruction": "Capture and give White doubled c-pawns — Black gets the bishop pair, White gets a center." },
+    { "san": "bxc3", "instruction": "Recapture toward the center. White now has a massive pawn chain on c3-d4-e5." },
+    { "san": "c4", "instruction": "Continue undermining — target the base of White's chain at d4." },
+    { "san": "Nf3", "instruction": "Develop and reinforce d4, the critical point of the structure." },
+    { "san": "Nc6", "instruction": "Add another attacker to d4. The pressure on White's center is mounting." },
+    { "san": "Be2", "instruction": "Develop the bishop and prepare to castle into safety." },
+    { "san": "Qc7", "instruction": "Place the queen actively, defending the d6 break idea and pressuring the e-file." }
+  ],
+  "variations": []
+}

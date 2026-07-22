@@ -803,3 +803,39 @@
 @media (max-width: 560px) {
   .friend-config { grid-template-columns: 1fr; }
 }
+
+.board-mount .sq.pre-from::before {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(212, 175, 55, 0.2);
+  pointer-events: none;
+}
+.board-mount .sq.pre-to::after {
+  content: ''; position: absolute; inset: 0;
+  border: 2px solid rgba(212, 175, 55, 0.6);
+  border-radius: 4px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.board-mount .pc.pre-ghost {
+  opacity: 0.35;
+  filter: drop-shadow(0 0 8px var(--gold-glow));
+  pointer-events: none;
+  z-index: 3;
+}
+
+.premove-indicator {
+  display: none;
+  font-family: var(--mono); font-size: 12px;
+  color: var(--gold); padding: 4px 10px;
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid var(--line); border-radius: var(--r-s);
+  margin-top: 8px;
+  width: max-content;
+}
+.premove-indicator.show {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.premove-indicator::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold); animation: clock-pulse 1.5s ease-in-out infinite;
+}

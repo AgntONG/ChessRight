@@ -1,0 +1,8 @@
+[
+  { "id": "ruy-lopez", "name": "Ruy Lopez", "side": "white", "difficulty": "beginner", "eco": "C60-C99" },
+  { "id": "italian-game", "name": "Italian Game", "side": "white", "difficulty": "beginner", "eco": "C50-C54" },
+  { "id": "sicilian-najdorf", "name": "Sicilian Najdorf", "side": "black", "difficulty": "intermediate", "eco": "B90-B99" },
+  { "id": "caro-kann", "name": "Caro-Kann Defense", "side": "black", "difficulty": "beginner", "eco": "B10-B19" },
+  { "id": "french-defense", "name": "French Defense", "side": "black", "difficulty": "beginner", "eco": "C00-C19" },
+  { "id": "queens-gambit", "name": "Queen's Gambit", "side": "white", "difficulty": "intermediate", "eco": "D06-D69" }
+]

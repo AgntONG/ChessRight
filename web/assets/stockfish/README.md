@@ -19,8 +19,28 @@ a CDN hit (and without CORS issues).
 | File                              | Size   | Purpose                                              |
 | --------------------------------- | ------ | ---------------------------------------------------- |
 | `stockfish-nnue-16-single.js`     | ~25 KB | Emscripten loader, spawned as a Web Worker           |
-| `stockfish-nnue-16-single.wasm`   | ~575 KB | The engine binary plus embedded NNUE net (575 KB < 5 MB — safe to commit) |
+| `stockfish-nnue-16-single.wasm`   | ~575 KB | The engine binary (single-threaded; NNUE net is NOT embedded) |
+| `nn-5af11540bbfe.nnue`            | ~40 MB | The NNUE evaluation network. Required for NNUE-backed eval (~250 Elo stronger than classical). Fetched as a sibling by the engine on first `Use NNUE true`, then cached in IndexedDB. |
 | `README.md`                       | —      | This file                                            |
+
+### Why the NNUE net is vendored (40 MB)
+
+The single-threaded build does NOT embed the NNUE net (unlike the multi-threaded
+`stockfish-nnue-16.*` build, which embeds it in a larger wasm). The engine
+defaults to `Use NNUE value false` and falls back to classical eval until the
+net is available. With the net present as a sibling file, `engine.js` sets
+`Use NNUE value true` during the handshake; the engine fetches the net once,
+parses it (~750 ms one-time), and caches the bytes in the Emscripten
+`emscripten_filesystem` IndexedDB store so subsequent loads are near-instant.
+
+Measured impact (Kiwipete `r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`, depth 18):
+classical eval reports `cp = -104`; NNUE reports `cp = -163`. The ~60 cp gap is
+the well-known NNUE accuracy improvement and translates to roughly 250 Elo at
+fixed depth on single-thread WASM.
+
+If the net is missing or fails to download, `engine.js` detects the
+`"Failed to download eval file."` diagnostic, flips `Use NNUE` back to `false`,
+and continues with classical eval (no crash, no hang).
 
 ## Filename convention — do NOT rename
 
@@ -55,6 +75,8 @@ curl -L -f -o stockfish-nnue-16-single.js \
   https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js
 curl -L -f -o stockfish-nnue-16-single.wasm \
   https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.wasm
+curl -L -f -o nn-5af11540bbfe.nnue \
+  https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/nn-5af11540bbfe.nnue
 ```
 
 Verify the wasm starts with the magic bytes `\0asm` (`00 61 73 6d`):

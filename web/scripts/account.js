@@ -162,7 +162,11 @@ class AccountPage {
       try { this.user = store.getUser() || this.user; } catch (_) {}
       if (res && res.status === 'synced') {
         this.setSyncState('synced', res.synced || 0);
-        this.renderProfile(this.user);
+        this.renderProfile(this._currentUser());
+        const activeTab = document.querySelector('[role="tab"][aria-selected="true"], [role="tab"].selected');
+        if (activeTab && /leaderboard/i.test(activeTab.textContent || '')) {
+          this.loadLeaderboard(true);
+        }
         if (res.synced > 0) {
           toast({
             title: 'Synced to server',
@@ -659,7 +663,8 @@ class AccountPage {
     this._renderLbSkeleton(target);
 
     let serverRows = null;
-    if (this.user && (this.user.syncState === 'synced' || force)) {
+    const u = this._currentUser();
+    if (u && (u.syncState === 'synced' || force)) {
       try {
         serverRows = await store.fetchLeaderboard(100);
       } catch (e) {
@@ -694,7 +699,8 @@ class AccountPage {
 
   _renderRankBanner(banner, rows, isServer) {
     if (!banner) return;
-    const myId = this.user && (this.user.serverId || this.user.id);
+    const u = this._currentUser();
+    const myId = u && (u.serverId || u.id);
     const games = (this.stats && this.stats.gamesPlayed) || 0;
 
     if (games < 5) {
@@ -705,7 +711,7 @@ class AccountPage {
       return;
     }
 
-    const me = rows.find((r) => r.isMe || (myId && r.userId === myId) || (r.handle === this.user.handle));
+    const me = rows.find((r) => r.isMe || (myId && r.userId === myId) || (r.handle === u.handle));
     if (me && typeof me.rank === 'number' && me.rank > 0) {
       banner.hidden = false;
       banner.classList.remove('off');
@@ -718,9 +724,10 @@ class AccountPage {
   }
 
   _localLeaderboard() {
+    const u = this._currentUser();
     const me = {
-      rank: 1, handle: (this.user && this.user.handle) || 'You',
-      rating: Math.round((this.user && this.user.rating) || 1200),
+      rank: 1, handle: u.handle || 'You',
+      rating: Math.round(u.rating || 1200),
       games: (this.stats && this.stats.gamesPlayed) || 0,
       isMe: true,
     };
@@ -766,8 +773,9 @@ class AccountPage {
       return;
     }
 
-    const myId = this.user && (this.user.serverId || this.user.id);
-    const myHandle = this.user && this.user.handle;
+    const u = this._currentUser();
+    const myId = u && (u.serverId || u.id);
+    const myHandle = u && u.handle;
 
     rows.slice(0, 100).forEach((r) => {
       const isMe = r.isMe || (myId && r.userId === myId) || (myHandle && r.handle === myHandle);
@@ -809,7 +817,7 @@ class AccountPage {
     if (!wrap) return;
     wrap.innerHTML = '';
 
-    const baseRating = (this.user && this.user.rating) || 1200;
+    const baseRating = (this._currentUser().rating) || 1200;
     const points = [];
     for (const g of games) {
       const ts = g.endedAt != null ? g.endedAt : g.startedAt;
@@ -1053,7 +1061,7 @@ class AccountPage {
   }
 
   async openChangeHandle() {
-    const current = (this.user && this.user.handle) || '';
+    const current = (this._currentUser().handle) || '';
     const field = el('div', 'field');
     field.appendChild(el('label', null, 'New handle'));
     const input = document.createElement('input');

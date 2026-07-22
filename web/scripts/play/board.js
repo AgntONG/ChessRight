@@ -137,7 +137,28 @@ export class Board {
       if (node.dataset && node.dataset.sq) return node.dataset.sq;
       node = node.parentElement;
     }
-    return squareFromPoint(this.mountEl, e.clientX, e.clientY);
+    return this._squareFromPoint(e.clientX, e.clientY);
+  }
+
+  // Geometry-based square resolution that respects the current board
+  // orientation. The standalone squareFromPoint() helper assumes
+  // white-at-bottom and returns the wrong square when the board is flipped.
+  _squareFromPoint(clientX, clientY) {
+    const rect = this.mountEl.getBoundingClientRect();
+    const px = (clientX - rect.left) / rect.width;
+    const py = (clientY - rect.top) / rect.height;
+    if (px < 0 || px > 1 || py < 0 || py > 1) return null;
+    const fileIdx = Math.min(7, Math.max(0, Math.floor(px * 8)));
+    const rankIdx = Math.min(7, Math.max(0, Math.floor(py * 8))); // 0=top row
+    let f, r;
+    if (this.orientation === 'w') {
+      f = fileIdx;
+      r = 8 - rankIdx;
+    } else {
+      f = 7 - fileIdx;
+      r = rankIdx + 1;
+    }
+    return coordToSq(f, r);
   }
 
   _pieceElAt(sq) {
@@ -213,7 +234,7 @@ export class Board {
       // Pointer is captured to the piece element, so ev.target is the piece
       // (whose dataset.sq is the source square). Resolve the destination by
       // geometry instead, otherwise _sqFromEvent would always return `sq`.
-      const target = squareFromPoint(this.mountEl, ev.clientX, ev.clientY);
+      const target = this._squareFromPoint(ev.clientX, ev.clientY);
       if (target && target !== sq && this._isLegalTarget(target)) {
         this._clearSelection();
         this._attemptMove(sq, target, true);

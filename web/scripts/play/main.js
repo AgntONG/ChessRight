@@ -598,9 +598,31 @@ class GameController {
       });
       this._showInviteWaiting(null, null);
       const { code, shareUrl } = await this.peer.create();
-      this._showInviteWaiting(code, shareUrl);
+      this._fillInviteCode(code, shareUrl);
     } catch (err) {
       toast({ title: 'Could not create invite', message: err.message, kind: 'bad' });
+    }
+  }
+
+  _fillInviteCode(code, shareUrl) {
+    const codeEl = document.querySelector('.invite-code');
+    if (codeEl && code) {
+      codeEl.textContent = code;
+      codeEl.classList.remove('placeholder');
+    }
+    const copyCodeBtn = $('copyCodeBtn');
+    if (copyCodeBtn && code) {
+      copyCodeBtn.disabled = false;
+      copyCodeBtn.onclick = () => {
+        navigator.clipboard.writeText(code).then(() => toast({ title: 'Copied', message: 'Invite code copied', kind: 'good' }));
+      };
+    }
+    const copyLinkBtn = $('copyLinkBtn');
+    if (copyLinkBtn && shareUrl) {
+      copyLinkBtn.disabled = false;
+      copyLinkBtn.onclick = () => {
+        navigator.clipboard.writeText(shareUrl).then(() => toast({ title: 'Copied', message: 'Invite link copied', kind: 'good' }));
+      };
     }
   }
 
@@ -637,18 +659,6 @@ class GameController {
     `;
     wait.removeAttribute('hidden');
 
-    const copyCodeBtn = $('copyCodeBtn');
-    const copyLinkBtn = $('copyLinkBtn');
-    if (code && copyCodeBtn) {
-      copyCodeBtn.onclick = () => {
-        navigator.clipboard.writeText(code).then(() => toast({ title: 'Copied', message: 'Invite code copied', kind: 'good' }));
-      };
-    }
-    if (shareUrl && copyLinkBtn) {
-      copyLinkBtn.onclick = () => {
-        navigator.clipboard.writeText(shareUrl).then(() => toast({ title: 'Copied', message: 'Invite link copied', kind: 'good' }));
-      };
-    }
     $('cancelInviteBtn').onclick = () => {
       if (this.peer) { try { this.peer.cancel(); } catch (_) {} this.peer = null; }
       this._hideInviteWaiting();

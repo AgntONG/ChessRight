@@ -659,7 +659,7 @@ class AdminPanel {
       this.dom.logsEmpty.hidden = true;
     }
     try {
-      const data = await this._api('/admin/logs');
+      const data = await this._api('/admin/audit');
       const logs = Array.isArray(data) ? data : (data && Array.isArray(data.events) ? data.events : []);
       this._logsLoaded = true;
       this._renderLogs(logs);

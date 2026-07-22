@@ -43,17 +43,38 @@ function json(data, status = 200) {
 const app = new Hono();
 
 app.use('*', async (c, next) => {
-  const origin = c.env.CORS_ORIGIN || '*';
-  c.header('Access-Control-Allow-Origin', origin);
+  const reqOrigin = c.req.header('Origin') || '';
+  const allowed = [
+    'https://agntong.github.io',
+    'http://localhost:8785',
+    'http://localhost:8765',
+    'http://localhost:8766',
+    'http://localhost:8770',
+    'http://127.0.0.1:8785',
+  ];
+  if (reqOrigin && allowed.includes(reqOrigin)) {
+    c.header('Access-Control-Allow-Origin', reqOrigin);
+  }
   c.header('Vary', 'Origin');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Admin-Token');
   c.header('Access-Control-Max-Age', '86400');
   if (c.req.method === 'OPTIONS') {
-    return new Response(null, { status: 204 });
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': reqOrigin,
+        'Vary': 'Origin',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Admin-Token',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
   }
   await next();
 });
+
+app.get('/', (c) => c.html('<h1>ChessRight API</h1><p>The chess server is running.</p><p>Frontend: <a href="https://agntong.github.io/ChessRight/">agontong.github.io/ChessRight</a></p>'));
 
 app.get('/api/health', (c) => c.json({ ok: true, service: 'chessright-api', ts: Date.now() }));
 

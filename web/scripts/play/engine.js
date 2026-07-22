@@ -422,3 +422,113 @@ export class Engine {
 }
 
 export { LEVELS };
+
+const CLOUD_APIS = [
+  {
+    name: 'chess-api.com',
+    url: 'https://chess-api.com/v1',
+    async bestMove(fen, depth, movetime) {
+      const res = await fetch(this.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fen,
+          depth: Math.min(depth || 12, 18),
+          maxThinkingTime: Math.min(movetime || 100, 100),
+        }),
+      });
+      if (!res.ok) throw new Error(`chess-api.com returned ${res.status}`);
+      const data = await res.json();
+      if (!data || !data.move) throw new Error('chess-api.com: no move');
+      return {
+        best: data.lan || data.move,
+        cp: data.centipawns ? parseInt(data.centipawns, 10) : (data.eval ? Math.round(data.eval * 100) : null),
+        mate: data.mate,
+        depth: data.depth || null,
+        pv: data.continuationArr || [],
+      };
+    },
+  },
+  {
+    name: 'stockfish.online',
+    url: 'https://stockfish.online/api/stockfish.php',
+    async bestMove(fen, depth, movetime) {
+      const params = new URLSearchParams({
+        fen,
+        depth: String(Math.min(depth || 12, 15)),
+        mode: 'bestmove',
+      });
+      const res = await fetch(`${this.url}?${params}`);
+      if (!res.ok) throw new Error(`stockfish.online returned ${res.status}`);
+      const data = await res.json();
+      if (!data || !data.bestmove) throw new Error('stockfish.online: no move');
+      const uci = data.bestmove.split(' ')[0];
+      if (!uci || uci.length < 4) throw new Error('stockfish.online: bad move');
+      return {
+        best: uci,
+        cp: data.eval_cp ? parseInt(data.eval_cp, 10) : null,
+        mate: data.eval_mate,
+        depth: data.depth || null,
+        pv: [],
+      };
+    },
+  },
+];
+
+export class CloudEngine {
+  constructor({ onError } = {}) {
+    this.onError = typeof onError === 'function' ? onError : () => {};
+    this.apiIndex = 0;
+    this.level = 8;
+  }
+
+  async ready() {
+    const cfg = levelConfig(this.level);
+    const api = CLOUD_APIS[this.apiIndex];
+    try {
+      const test = await api.bestMove('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 5, 50);
+      if (!test || !test.best) throw new Error('no move returned');
+    } catch (err) {
+      if (this.apiIndex < CLOUD_APIS.length - 1) {
+        this.apiIndex++;
+        return this.ready();
+      }
+      throw err;
+    }
+  }
+
+  async setLevel(level) {
+    this.level = level;
+  }
+
+  async newGame() {}
+
+  async bestMove({ fen }) {
+    const cfg = levelConfig(this.level);
+    const api = CLOUD_APIS[this.apiIndex];
+    try {
+      return await api.bestMove(fen, cfg.depth, cfg.movetime);
+    } catch (err) {
+      for (let i = 0; i < CLOUD_APIS.length; i++) {
+        if (i === this.apiIndex) continue;
+        try {
+          const result = await CLOUD_APIS[i].bestMove(fen, cfg.depth, cfg.movetime);
+          this.apiIndex = i;
+          return result;
+        } catch (_) {}
+      }
+      throw err;
+    }
+  }
+
+  async analyze({ fen, depth, movetime }) {
+    const cfg = levelConfig(this.level);
+    return this.bestMove({ fen, depth, movetime });
+  }
+
+  quit() {}
+
+  isNnueEnabled() { return true; }
+
+  get nnueEnabled() { return true; }
+}

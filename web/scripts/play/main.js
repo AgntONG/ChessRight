@@ -1,6 +1,6 @@
 import { Chess } from 'https://esm.sh/chess.js@1.0.0?bundle';
 import { Board } from './board.js';
-import { Engine } from './engine.js';
+import { Engine, CloudEngine } from './engine.js';
 import { store } from './store.js';
 import { analyzeGame, accuracyToElo } from './accuracy.js';
 import { Clock } from './clock.js';
@@ -431,8 +431,16 @@ class GameController {
       await this.engine.setLevel(this._skillToLevel(skillLevel));
       await this.engine.newGame();
     } catch (err) {
-      toast({ title: 'Engine unavailable', message: 'Falling back to a simple bot.', kind: 'bad' });
-      this.engine = null;
+      try {
+        this.engine = new CloudEngine({ onError: () => {} });
+        await this.engine.ready();
+        await this.engine.setLevel(this._skillToLevel(skillLevel));
+        await this.engine.newGame();
+        toast({ title: 'Cloud engine', message: 'Using online Stockfish (SF18 NNUE).', kind: 'info' });
+      } catch (cloudErr) {
+        toast({ title: 'Engine unavailable', message: 'Falling back to a simple bot.', kind: 'bad' });
+        this.engine = null;
+      }
     }
 
     this._startGameFlow();

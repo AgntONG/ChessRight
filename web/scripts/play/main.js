@@ -1975,16 +1975,32 @@ class GameController {
       toast({ title: 'Nothing to undo', message: 'No moves to take back yet.', kind: 'info' });
       return;
     }
+    if (this.busy) {
+      toast({ title: 'Wait', message: 'Engine is thinking...', kind: 'info' });
+      return;
+    }
     let undoCount = this.chess.turn() === this.myColor ? 2 : 1;
     while (undoCount-- > 0 && this.moveHistory.length) {
       this.chess.undo();
       this.moveHistory.pop();
-      this.evalHistory.pop();
     }
+    this.evalHistory = [];
     this.board.setPosition(this.chess);
     this._renderMoves();
-    if (this.clock) this.clock.onMove(this.chess.turn());
+    this._highlightLast(this.moveHistory.length > 0 ? this.moveHistory[this.moveHistory.length - 1].verbose : null);
     if (this.board) this.board.clearPremoves();
+    this.busy = false;
+    this.ended = false;
+    const side = this.chess.turn();
+    const meIsOn = side === this.myColor;
+    if (this.board) this.board.setInteractive(meIsOn);
+    if (this.clock) {
+      this.clock.active = side;
+      this.clock.lastTickAt = performance.now();
+    }
+    if (!meIsOn && this.mode === 'bot') {
+      setTimeout(() => this._botMove(), 500);
+    }
     toast({ title: 'Move taken back', message: 'It is your move again.', kind: 'good' });
   }
 

@@ -14,6 +14,19 @@ const SKILL_TO_ELO = (s) => {
   return Math.round(800 + (2400 - 800) * t);
 };
 
+const BOT_NAMES = [
+  'Rookie Riley', 'Beginner Bo', 'Casual Cara', 'Friendly Frank',
+  'Club Player Kai', 'Steady Sam', 'Tournament Tina', 'Sharp Shooter',
+  'Tactical Tom', 'Strong Player', 'Expert Ellis', 'Master Morgan',
+  'Grandmaster G', 'Wizard of Chess', 'The Professor', 'Iron Knight',
+  'Steel Bishop', 'Golden Rook', 'Phantom Queen', 'Immortal King',
+];
+
+function botName(level) {
+  const idx = Math.max(0, Math.min(BOT_NAMES.length - 1, level - 1));
+  return BOT_NAMES[idx];
+}
+
 const SKILL_LABELS = [
   [1, 2, 'Just learning the rules'],
   [3, 4, 'Casual player'],
@@ -108,9 +121,6 @@ class GameController {
         this._renderConfig(card.dataset.mode);
       });
     });
-
-    const startBtn = $('startGameBtn');
-    if (startBtn) startBtn.addEventListener('click', () => this._startFromConfig());
   }
 
   _renderConfig(mode) {
@@ -281,7 +291,7 @@ class GameController {
     this.botColor = this.myColor === 'w' ? 'b' : 'w';
 
     this.opponent = {
-      name: 'Stockfish Lv ' + skillLevel,
+      name: botName(skillLevel),
       rating: SKILL_TO_ELO(skillLevel),
       kind: 'bot',
     };
@@ -1009,11 +1019,9 @@ class GameController {
     try {
       const before = store.getUser() || this.user;
       oldRating = Math.round(before.rating || 1200);
-      const expected = 1 / (1 + Math.pow(10, (oppRating - oldRating) / 400));
-      const k = 32;
-      delta = Math.round(k * (score - expected));
-      newRating = Math.max(100, oldRating + delta);
-      try { store.updateRating(delta, oppRating, result); } catch (_) {}
+      const updated = store.updateRating(0, oppRating, result);
+      newRating = Math.round((updated && updated.rating) || oldRating);
+      delta = newRating - oldRating;
       if (analysis.accuracy != null) {
         try { store.setEstimatedElo(estElo); } catch (_) {}
       }
@@ -1103,6 +1111,9 @@ class GameController {
   }
 
   _renderPostGame({ result, ending, oldRating, newRating, delta, analysis, estElo }) {
+    const callout = document.querySelector('.best-move-callout');
+    if (callout) { callout.style.display = 'none'; callout.innerHTML = ''; }
+
     const banner = $('resultBanner');
     if (banner) {
       banner.classList.remove('loss', 'draw');

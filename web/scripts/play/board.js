@@ -210,12 +210,16 @@ export class Board {
       pcEl.removeEventListener('pointerup', onUp);
       pcEl.removeEventListener('pointercancel', onUp);
       pcEl.classList.remove('dragging');
-      const target = this._sqFromEvent(ev);
+      // Pointer is captured to the piece element, so ev.target is the piece
+      // (whose dataset.sq is the source square). Resolve the destination by
+      // geometry instead, otherwise _sqFromEvent would always return `sq`.
+      const target = squareFromPoint(this.mountEl, ev.clientX, ev.clientY);
       if (target && target !== sq && this._isLegalTarget(target)) {
         this._clearSelection();
         this._attemptMove(sq, target, true);
       } else {
         this._placePiece(pcEl, sq);
+        this._clearSelection();
       }
       this.drag = null;
     };

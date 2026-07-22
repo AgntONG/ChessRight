@@ -771,3 +771,35 @@
 .best-move-callout .bm-icon { color: var(--gold); flex-shrink: 0; }
 .best-move-callout .bm-text { font-size: 14px; color: var(--ink-2); }
 .best-move-callout .bm-text strong { color: var(--ink); font-family: var(--mono); }
+
+.friend-config {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  margin-top: 8px;
+}
+.friend-option {
+  padding: 24px 20px; border-radius: var(--r-m);
+  background: rgba(0,0,0,0.2); border: 1px solid var(--line);
+  text-align: center;
+}
+.friend-option h4 {
+  font-family: var(--serif); font-weight: 500; font-size: 18px;
+  margin: 0 0 6px; color: var(--ink);
+}
+.friend-option p {
+  font-size: 13px; color: var(--ink-3); margin: 0 0 16px;
+}
+.friend-option input {
+  width: 100%; max-width: 140px; text-align: center;
+  font-family: var(--mono); font-size: 18px; font-weight: 700;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  padding: 10px 12px; margin-bottom: 10px;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
+  border-radius: var(--r-s); color: var(--gold);
+}
+.friend-option input:focus {
+  outline: none; border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(212,175,55,0.15);
+}
+@media (max-width: 560px) {
+  .friend-config { grid-template-columns: 1fr; }
+}

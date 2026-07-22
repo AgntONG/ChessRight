@@ -111,6 +111,23 @@
   color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase;
 }
 
+.skill-label {
+  font-family: var(--sans); font-size: 14px; font-weight: 500;
+  color: var(--gold-2); margin-top: 4px;
+}
+
+.lobby-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 24px; color: var(--ink-3); font-size: 13.5px;
+  max-width: 540px;
+}
+.lobby-hint svg { color: var(--gold); flex-shrink: 0; }
+
+.friend-note {
+  text-align: center; color: var(--ink-3); font-size: 13px;
+  margin-top: 16px; padding: 0 20px;
+}
+
 .tc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .tc-btn {
   padding: 14px 10px; border-radius: var(--r-m);
@@ -726,3 +743,31 @@
 }
 .invite-status.bad::before { animation: none; }
 .invite-status.good::before { animation: none; }
+
+.result-subtitle {
+  font-family: var(--sans); font-size: 16px; color: var(--ink-2);
+  margin-top: 6px;
+}
+
+.acc-quality {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 100px; margin-left: 10px;
+  vertical-align: middle;
+}
+.acc-quality.outstanding { background: rgba(212,175,55,0.15); color: var(--gold-2); }
+.acc-quality.excellent { background: rgba(122,195,95,0.15); color: var(--good); }
+.acc-quality.good { background: rgba(122,195,95,0.1); color: #8bc882; }
+.acc-quality.fair { background: rgba(245,197,55,0.12); color: #e8c44a; }
+.acc-quality.inaccurate { background: rgba(224,150,56,0.12); color: #e09e38; }
+.acc-quality.needs-work { background: rgba(224,86,86,0.12); color: var(--bad); }
+
+.best-move-callout {
+  margin-top: 20px; padding: 16px 20px; border-radius: var(--r-m);
+  background: linear-gradient(135deg, rgba(212,175,55,0.06), transparent);
+  border: 1px solid var(--line);
+  display: flex; gap: 14px; align-items: center;
+}
+.best-move-callout .bm-icon { color: var(--gold); flex-shrink: 0; }
+.best-move-callout .bm-text { font-size: 14px; color: var(--ink-2); }
+.best-move-callout .bm-text strong { color: var(--ink); font-family: var(--mono); }

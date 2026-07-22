@@ -359,3 +359,79 @@
   .board-controls { justify-content: flex-end; }
   .section-head h2 { font-size: 32px; }
 }
+
+/* ─── Hero value chips ─── */
+/* NOTE: class is .value-chip, NOT .badge — .badge is already used by the
+   brilliancy board overlay (landing.css line ~150). Sharing that name would
+   cascade over the floating "23…Qg3!!" element and break the animation. */
+.hero-badges {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+  margin-top: 22px;
+}
+.value-chip {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em;
+  color: var(--ink-2); padding: 5px 12px;
+  border: 1px solid var(--line); border-radius: 100px;
+  background: rgba(212, 175, 55, 0.03);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+/* separator dots between chips */
+.value-chip[aria-hidden="true"] {
+  border: 0; padding: 0; background: none;
+  color: var(--gold); opacity: 0.45; font-size: 13px;
+}
+.hero-badges:hover .value-chip:not([aria-hidden="true"]) { color: var(--ink); }
+
+/* ─── "Your chess journey" learning loop ─── */
+.journey-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+  position: relative;
+}
+.journey-step {
+  position: relative; padding: 38px 28px; border-radius: var(--r-l);
+  background: var(--panel); border: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+  transition: transform 0.3s var(--ease), border-color 0.3s;
+}
+.journey-step:hover { transform: translateY(-4px); border-color: var(--line-2); }
+.step-num {
+  font-family: var(--serif); font-size: 48px; font-weight: 500;
+  color: var(--gold); opacity: 0.25; line-height: 1;
+  position: absolute; top: 20px; right: 26px;
+  transition: opacity 0.3s;
+}
+.journey-step:hover .step-num { opacity: 0.42; }
+.step-icon {
+  color: var(--gold); margin-bottom: 18px;
+  filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.18));
+}
+.journey-step h3 {
+  font-family: var(--serif); font-weight: 500; font-size: 22px;
+  margin: 0 0 10px; letter-spacing: -0.01em;
+}
+.journey-step p { color: var(--ink-2); margin: 0; font-size: 14.5px; line-height: 1.6; }
+
+/* Connecting arrow between steps — desktop only, sits in the 28px gap */
+@media (min-width: 1024px) {
+  .journey-step:not(:last-child)::after {
+    content: '→'; position: absolute; right: -22px; top: 50%;
+    transform: translateY(-50%); font-size: 20px; color: var(--gold);
+    opacity: 0.4; z-index: 2; pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .journey-step:not(:last-child):hover::after { opacity: 0.7; }
+}
+@media (max-width: 820px) {
+  .journey-grid { grid-template-columns: 1fr; gap: 18px; }
+  .journey-step:not(:last-child)::after { display: none; }
+  /* on mobile, a downward arrow keeps the "next step" cue */
+  .journey-step:not(:last-child)::after {
+    content: '↓'; display: block; position: static; transform: none;
+    color: var(--gold); opacity: 0.35; font-size: 18px;
+    text-align: center; margin: -4px 0;
+  }
+}
+
+/* CTA headline sits closer to platform grid when the new one-liner is longer */
+.cta-content h2 { max-width: 16ch; margin-left: auto; margin-right: auto; }
+

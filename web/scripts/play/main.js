@@ -9,7 +9,27 @@ import { toast, confirm, formatTime } from '../ui.js';
 
 const GLYPH = { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' };
 
-const SKILL_TO_ELO = (s) => Math.round(1320 + ((3190 - 1320) * Math.max(0, Math.min(20, s))) / 20);
+const SKILL_TO_ELO = (s) => {
+  const t = Math.max(0, Math.min(20, s)) / 20;
+  return Math.round(800 + (2400 - 800) * t);
+};
+
+const SKILL_LABELS = [
+  [1, 2, 'Just learning the rules'],
+  [3, 4, 'Casual player'],
+  [5, 6, 'Club player'],
+  [7, 8, 'Tournament player'],
+  [9, 10, 'Strong tournament'],
+  [11, 12, 'Expert'],
+  [13, 20, 'Master and above'],
+];
+
+function skillLabel(level) {
+  for (const [min, max, label] of SKILL_LABELS) {
+    if (level >= min && level <= max) return label;
+  }
+  return 'Custom';
+}
 
 const TIME_CONTROLS = {
   bullet:     { label: 'Bullet',     base: 60,   incr: 0,    display: '1+0'   },
@@ -123,6 +143,7 @@ class GameController {
         <div class="difficulty-labels">
           <span>Beginner</span><span>Club</span><span>Master</span><span>GM</span>
         </div>
+        <div class="skill-label" id="skillLabel">${skillLabel(this.skillLevel)}</div>
       </div>
       <div class="cfg-row">
         <label class="cfg-label">Time control</label>
@@ -154,6 +175,7 @@ class GameController {
           <button class="btn btn-ghost" id="joinGameBtn">Join</button>
         </div>
       </div>
+      <p class="friend-note">Playing a friend is the best way to learn. Share your link and start a game in seconds.</p>
     `;
   }
 
@@ -170,10 +192,28 @@ class GameController {
   _wireBotConfig() {
     const slider = $('skillSlider');
     const eloEl = $('skillElo');
+    const labelEl = $('skillLabel');
     if (slider && eloEl) {
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       slider.addEventListener('input', () => {
         this.skillLevel = parseInt(slider.value, 10);
         eloEl.textContent = SKILL_TO_ELO(this.skillLevel) + ' Elo';
+        if (labelEl) {
+          const next = skillLabel(this.skillLevel);
+          const prev = labelEl.textContent;
+          if (next !== prev) {
+            if (reduce) {
+              labelEl.textContent = next;
+            } else {
+              labelEl.style.transition = 'opacity 0.12s var(--ease)';
+              labelEl.style.opacity = '0';
+              window.setTimeout(() => {
+                labelEl.textContent = next;
+                labelEl.style.opacity = '1';
+              }, 90);
+            }
+          }
+        }
       });
     }
     this._wireTcGrid();
@@ -1076,6 +1116,9 @@ class GameController {
       if (p) p.textContent = this._endingText(result, ending);
     }
 
+    const sub = document.querySelector('.result-subtitle');
+    if (sub) sub.textContent = this._encouragingMessage(result, ending, analysis.accuracy);
+
     const ratingOld = document.querySelector('.rating-old .val');
     const ratingNew = document.querySelector('.rating-new .val');
     const ratingDelta = document.querySelector('.rating-delta');
@@ -1091,6 +1134,13 @@ class GameController {
     const accNum = document.querySelector('.acc-num');
     if (accNum) accNum.textContent = (analysis.accuracy || 0).toFixed(1) + '%';
 
+    const accQuality = document.querySelector('.acc-quality');
+    if (accQuality) {
+      const q = this._accuracyQuality(analysis.accuracy || 0);
+      accQuality.textContent = q.label;
+      accQuality.className = 'acc-quality ' + q.cls;
+    }
+
     const buckets = document.querySelectorAll('.acc-buckets .bucket');
     buckets.forEach((b) => {
       const cls = b.dataset.class;
@@ -1101,6 +1151,64 @@ class GameController {
 
     const estEloEl = document.querySelector('.est-elo strong');
     if (estEloEl) estEloEl.textContent = estElo;
+
+    this._renderBestMove(analysis);
+  }
+
+  _encouragingMessage(result, ending, accuracy) {
+    const acc = accuracy || 0;
+    if (result === 'win') {
+      if (ending === 'resignation' || ending === 'abandoned') return 'Your opponent resigned — you were clearly winning.';
+      if (acc >= 85) return 'Excellent game! You played brilliantly.';
+      if (acc >= 70) return 'Well played! A solid win.';
+      return 'You found a way to win — even if it wasn\'t always pretty!';
+    }
+    if (result === 'loss') {
+      if (ending === 'flag') return 'Time ran out. Try a longer time control next time.';
+      if (acc >= 85) return 'Tough loss, but you played well. The rating will catch up.';
+      if (acc >= 70) return 'Good fight. Review your mistakes and come back stronger.';
+      return 'Every loss is a lesson. Check the analysis and try again!';
+    }
+    return 'A balanced game! Small improvements will tip the scale next time.';
+  }
+
+  _accuracyQuality(acc) {
+    if (acc >= 95) return { label: 'Outstanding', cls: 'outstanding' };
+    if (acc >= 90) return { label: 'Excellent', cls: 'excellent' };
+    if (acc >= 80) return { label: 'Good', cls: 'good' };
+    if (acc >= 70) return { label: 'Fair', cls: 'fair' };
+    if (acc >= 60) return { label: 'Inaccurate', cls: 'inaccurate' };
+    return { label: 'Needs work', cls: 'needs-work' };
+  }
+
+  _renderBestMove(analysis) {
+    const container = document.querySelector('.best-move-callout');
+    if (!container || !analysis.perMove || analysis.perMove.length === 0) return;
+
+    const brilliant = analysis.perMove.find(m => m.classification === 'brilliant');
+    if (brilliant) {
+      container.innerHTML = '<span class="bm-icon">' + this._svgStar() + '</span><span class="bm-text">You found a brilliant move! <strong>' + brilliant.san + '</strong> — a move worthy of the masters.</span>';
+      container.style.display = 'flex';
+      return;
+    }
+
+    const sorted = [...analysis.perMove].sort((a, b) => b.accuracy - a.accuracy);
+    const best = sorted[0];
+    if (best && best.accuracy >= 90) {
+      container.innerHTML = '<span class="bm-icon">' + this._svgCheck() + '</span><span class="bm-text">Your best move: <strong>' + best.san + '</strong> — keep this up!</span>';
+      container.style.display = 'flex';
+      return;
+    }
+
+    container.style.display = 'none';
+  }
+
+  _svgStar() {
+    return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+  }
+
+  _svgCheck() {
+    return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
   }
 
   _endingText(result, ending) {

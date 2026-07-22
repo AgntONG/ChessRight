@@ -41,23 +41,28 @@
 
   <main class="play-page">
     <section class="lobby" id="lobby">
-      <h1>Start a game</h1>
+      <h1>Ready to play?</h1>
       <div class="lobby-grid">
         <button type="button" class="mode-card" data-mode="bot">
           <span class="mc-icon" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M8 14h.01M16 14h.01M9 18h6"/><circle cx="12" cy="3" r="1"/></svg>
           </span>
           <h3>Play the Engine</h3>
-          <p>Stockfish in your browser, 20 levels from beginner to grandmaster.</p>
+          <p>Play Stockfish at your level. 20 difficulty settings from gentle beginner to tournament strength.</p>
         </button>
         <button type="button" class="mode-card" data-mode="friend">
           <span class="mc-icon" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
           </span>
           <h3>Play a Friend</h3>
-          <p>Create a game and share the link, or join with a code.</p>
+          <p>Invite a friend with a link or code. No sign-up needed — just play.</p>
         </button>
       </div>
+
+      <p class="lobby-hint">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.7.6 1 1.2 1 2.1V18h6v-1.2c0-.9.3-1.5 1-2.1A7 7 0 0 0 12 2Z"/></svg>
+        New to chess? Start at level 1 — the engine plays gently and you'll learn as you go.
+      </p>
 
       <div class="config-panel" id="configPanel" hidden></div>
     </section>
@@ -134,6 +139,7 @@
           <span class="result-icon" aria-hidden="true">🏆</span>
           <h2>Victory</h2>
           <p>Checkmate in 34 moves</p>
+          <p class="result-subtitle"></p>
         </div>
 
         <div class="rating-change">
@@ -153,6 +159,7 @@
           <h3>Move quality</h3>
           <div class="acc-big">
             <div class="acc-num">87.4%</div>
+            <span class="acc-quality good">Good</span>
             <div class="acc-label">Accuracy</div>
           </div>
           <div class="acc-buckets">
@@ -186,10 +193,11 @@
             <strong>1650</strong>
             <small>Based on move quality, not results</small>
           </div>
+          <div class="best-move-callout" style="display:none"></div>
         </div>
 
         <div class="post-actions">
-          <button type="button" class="btn btn-ghost" id="reviewBtn">Review game</button>
+          <button type="button" class="btn btn-ghost" id="reviewBtn">Review your moves</button>
           <button type="button" class="btn btn-primary" id="rematchBtn">Play again</button>
         </div>
       </div>

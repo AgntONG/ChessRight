@@ -620,3 +620,70 @@
   .post-actions { padding: 18px 22px; }
   .acc-buckets { grid-template-columns: repeat(2, 1fr); }
 }
+
+.invite-waiting {
+  padding: 80px 32px;
+  display: flex;
+  justify-content: center;
+  animation: rise 0.4s var(--ease) both;
+}
+.invite-card {
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-l);
+  padding: 48px 32px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.7);
+}
+.invite-card h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 28px;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.invite-sub {
+  color: var(--ink-2);
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+.invite-code {
+  font-family: var(--mono);
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--gold);
+  padding: 20px;
+  margin-bottom: 24px;
+  background: rgba(212, 175, 55, 0.06);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-m);
+  user-select: all;
+}
+.invite-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.spinner-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(212, 175, 55, 0.18);
+  border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

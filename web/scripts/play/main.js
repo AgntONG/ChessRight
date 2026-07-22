@@ -4,7 +4,11 @@ import { Engine } from './engine.js';
 import { store } from './store.js';
 import { analyzeGame, accuracyToElo } from './accuracy.js';
 import { Clock } from './clock.js';
-import { MatchClient, PeerConnection } from './net.js';
+import {
+  MatchClient, PeerConnection,
+  InviteHost, InviteGuest,
+  parseInviteFromUrl,
+} from './net.js';
 import { toast, confirm, formatTime } from '../ui.js';
 
 const GLYPH = { p: '\u265F', n: '\u265E', b: '\u265D', r: '\u265C', q: '\u265B', k: '\u265A' };
@@ -70,6 +74,14 @@ class GameController {
     this._wireGameControls();
     this._wirePostGame();
     this._refreshMePanel();
+
+    const joinCode = parseInviteFromUrl();
+    if (joinCode) {
+      const friendCard = document.querySelector('[data-mode="friend"]');
+      if (friendCard) friendCard.click();
+      const inp = $('friendCode');
+      if (inp) inp.value = joinCode.replace(/^CR-/, '');
+    }
   }
 
   _wireLobby() {
@@ -160,6 +172,7 @@ class GameController {
         </div>
       </div>
       <div class="cfg-foot">
+        <button type="button" class="btn btn-ghost" id="createInviteBtn">Create invite instead</button>
         <button class="btn btn-primary" id="startGameBtn">Join game</button>
       </div>
     `;
@@ -207,6 +220,8 @@ class GameController {
     }
     const start = $('startGameBtn');
     if (start) start.addEventListener('click', () => this._startFromConfig());
+    const createInvite = $('createInviteBtn');
+    if (createInvite) createInvite.addEventListener('click', () => this.startFriendHost());
   }
 
   _wireTcGrid() {
@@ -300,6 +315,21 @@ class GameController {
       userId: user.id,
       rating: user.rating,
     });
+
+    const serverUp = await client.isServerAvailable();
+    if (!serverUp) {
+      this._hideSearching();
+      const choice = await confirm({
+        title: 'Quick match unavailable',
+        message: 'The matchmaking server is not deployed. You can still play a friend by sharing an invite link, or play the engine.',
+        confirmLabel: 'Create invite link',
+        cancelLabel: 'Play engine',
+      });
+      if (choice) {
+        return this.startFriendHost();
+      }
+      return this.startBotGame(10);
+    }
 
     try {
       const match = await client.findMatch({
@@ -465,40 +495,131 @@ class GameController {
   }
 
   async startFriendGame(code) {
+    if (!code || typeof code !== 'string') return;
+    const user = store.ensureUser();
+
     this._resetState();
     this.mode = 'friend';
-    this.myColor = 'w';
-    this.opponent = {
-      name: 'Friend (' + code + ')',
-      rating: null,
-      kind: 'friend',
-    };
-    this._showSearching('Connecting to ' + code);
-
-    const user = store.ensureUser();
-    const client = new MatchClient({
-      apiBase: this.apiBase,
-      token: user.token,
-      userId: user.id,
-      rating: user.rating,
-    });
+    this.opponent = { kind: 'human', name: 'Opponent', rating: 1200 };
 
     try {
-      const match = await client.joinInvite(code);
-      await this._initHumanGame(match, client);
-      return;
-    } catch (err) {
-      if (err && err.name === 'AbortError') return;
-      toast({ title: 'Could not join game', message: err.message || 'Invite not available', kind: 'bad' });
-    }
+      this.peer = new InviteGuest({
+        handle: user.handle,
+        rating: user.rating,
+        onMessage: (msg) => this._onPeerMessage(msg),
+        onHostConnected: ({ hostHandle, hostRating, myColor }) => {
+          this.myColor = myColor;
+          this.botColor = myColor === 'w' ? 'b' : 'w';
+          this.opponent = { kind: 'human', name: hostHandle || 'Host', rating: hostRating || 1200 };
+        },
+        onHostDisconnected: () => this._onPeerDisconnect(),
+        onError: (err) => toast({ title: 'Connection failed', message: err.message, kind: 'bad' }),
+      });
+      const result = await this.peer.join(code);
+      this.myColor = result.myColor;
+      this.botColor = this.myColor === 'w' ? 'b' : 'w';
+      this.opponent = { kind: 'human', name: result.hostHandle || 'Host', rating: result.hostRating || 1200 };
+      this.gameId = 'invite-' + code;
 
-    this._hideSearching();
-    const tryBot = await confirm({
-      title: 'No match found',
-      message: 'Would you like to play the engine instead?',
-      confirmLabel: 'Play engine',
-    });
-    if (tryBot) this.startBotGame(10);
+      this._showGameScreen();
+      this._refreshOppPanel();
+      this._refreshMePanel();
+      this._initBoard();
+      this._initClocks();
+      this._startGameFlow();
+
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch (err) {
+      toast({ title: 'Could not join', message: err.message || 'Invalid code or host offline', kind: 'bad' });
+      show($('lobby'));
+    }
+  }
+
+  async startFriendHost() {
+    const user = store.ensureUser();
+    this._resetState();
+    this.mode = 'friend';
+    this.opponent = { kind: 'human', name: 'Waiting\u2026', rating: 0 };
+
+    try {
+      this.peer = new InviteHost({
+        handle: user.handle,
+        rating: user.rating,
+        onMessage: (msg) => this._onPeerMessage(msg),
+        onGuestConnected: ({ guestHandle, guestRating, myColor }) => {
+          this.myColor = myColor;
+          this.botColor = myColor === 'w' ? 'b' : 'w';
+          this.opponent = { kind: 'human', name: guestHandle || 'Guest', rating: guestRating || 1200 };
+          this.gameId = 'invite-host';
+          this._hideInviteWaiting();
+          this._showGameScreen();
+          this._refreshOppPanel();
+          this._refreshMePanel();
+          this._initBoard();
+          this._initClocks();
+          this._startGameFlow();
+        },
+        onGuestDisconnected: () => this._onPeerDisconnect(),
+        onError: (err) => toast({ title: 'Connection failed', message: err.message, kind: 'bad' }),
+      });
+      const { code, shareUrl } = await this.peer.create();
+      this._showInviteWaiting(code, shareUrl);
+    } catch (err) {
+      toast({ title: 'Could not create invite', message: err.message, kind: 'bad' });
+    }
+  }
+
+  _showInviteWaiting(code, shareUrl) {
+    const lobby = $('lobby');
+    if (lobby) lobby.setAttribute('hidden', '');
+    const game = $('game');
+    if (game) game.setAttribute('hidden', '');
+    const postGame = $('postGame');
+    if (postGame) postGame.setAttribute('hidden', '');
+
+    let wait = $('inviteWaiting');
+    if (!wait) {
+      wait = document.createElement('section');
+      wait.id = 'inviteWaiting';
+      wait.className = 'invite-waiting';
+      const main = document.querySelector('.play-page') || document.body;
+      main.appendChild(wait);
+    }
+    wait.innerHTML = `
+      <div class="invite-card">
+        <h2>Waiting for opponent</h2>
+        <p class="invite-sub">Share this code or link:</p>
+        <div class="invite-code">${code}</div>
+        <div class="invite-actions">
+          <button type="button" class="btn btn-ghost" id="copyCodeBtn">Copy code</button>
+          <button type="button" class="btn btn-ghost" id="copyLinkBtn">Copy link</button>
+          <button type="button" class="btn btn-ghost" id="cancelInviteBtn">Cancel</button>
+        </div>
+        <div class="spinner-wrap"><div class="spinner"></div></div>
+      </div>
+    `;
+    wait.removeAttribute('hidden');
+
+    $('copyCodeBtn').onclick = () => {
+      navigator.clipboard.writeText(code).then(() => toast({ title: 'Copied', message: 'Invite code copied', kind: 'good' }));
+    };
+    $('copyLinkBtn').onclick = () => {
+      navigator.clipboard.writeText(shareUrl).then(() => toast({ title: 'Copied', message: 'Invite link copied', kind: 'good' }));
+    };
+    $('cancelInviteBtn').onclick = () => {
+      if (this.peer) { try { this.peer.cancel(); } catch (_) {} this.peer = null; }
+      this._hideInviteWaiting();
+      this._resetState();
+      const lob = $('lobby');
+      if (lob) lob.removeAttribute('hidden');
+    };
+  }
+
+  _hideInviteWaiting() {
+    const wait = $('inviteWaiting');
+    if (wait) wait.setAttribute('hidden', '');
   }
 
   _showSearching(msg) {

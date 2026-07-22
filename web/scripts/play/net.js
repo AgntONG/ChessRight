@@ -5,24 +5,92 @@ const DEFAULT_TIMECONTROL = '10+5';
 const QUEUE_TIMEOUT_MS = 120000;
 const PEER_READY_TIMEOUT_MS = 15000;
 const CONNECT_TIMEOUT_MS = 15000;
+const HELLO_TIMEOUT_MS = 15000;
+const HEALTH_TIMEOUT_MS = 5000;
 const LATENCY_INTERVAL_MS = 5000;
+const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const INVITE_PREFIX = 'CR-';
+const INVITE_PEER_NAMESPACE = 'chessright-invite-';
 const PEER_ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
-function generatePeerId() {
-  if (
-    typeof crypto !== 'undefined' &&
-    crypto.getRandomValues &&
-    typeof Uint8Array !== 'undefined'
-  ) {
-    const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
-    let out = 'peer_';
-    for (let i = 0; i < bytes.length; i++) {
-      out += PEER_ID_ALPHABET[bytes[i] % PEER_ID_ALPHABET.length];
-    }
-    return out;
+const DEFAULT_PEER_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ],
+  },
+};
+
+function generateCode(len = 6) {
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  let s = '';
+  for (let i = 0; i < len; i++) {
+    s += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
   }
-  return 'peer_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return s;
+}
+
+function generateInviteCode() {
+  return INVITE_PREFIX + generateCode(6);
+}
+
+function normalizeCode(input) {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim().toUpperCase();
+  if (!trimmed) return null;
+  return trimmed.startsWith(INVITE_PREFIX) ? trimmed : INVITE_PREFIX + trimmed;
+}
+
+function inviteCodeToPeerId(code) {
+  return INVITE_PEER_NAMESPACE + code;
+}
+
+function buildShareUrl(code) {
+  try {
+    return new URL('?join=' + encodeURIComponent(code), window.location.href).href;
+  } catch (_) {
+    return '?join=' + encodeURIComponent(code);
+  }
+}
+
+export function parseInviteFromUrl(href) {
+  try {
+    const ref = href || (typeof window !== 'undefined' ? window.location.href : '');
+    if (!ref) return null;
+    const url = new URL(ref);
+    const raw = url.searchParams.get('join');
+    return raw ? normalizeCode(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function generatePeerId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  let out = 'peer_';
+  for (let i = 0; i < bytes.length; i++) {
+    out += PEER_ID_ALPHABET[bytes[i] % PEER_ID_ALPHABET.length];
+  }
+  return out;
+}
+
+function invertColor(c) {
+  return c === 'w' ? 'b' : 'w';
+}
+
+function withTimeout(ms, label) {
+  let timer;
+  const p = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new ConnectionError(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  const cancel = () => clearTimeout(timer);
+  return { promise: p, cancel };
 }
 
 export class QueueError extends Error {
@@ -128,6 +196,24 @@ export class MatchClient {
 
   _delete(path, opts) {
     return this._request('DELETE', path, { allowEmpty: true, ...opts });
+  }
+
+  async isServerAvailable() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${this.apiBase}/health`, {
+        method: 'GET',
+        headers: this._headers(),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      return res.ok;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   _normalizeMatchGame(serverView, fallbackHandle) {
@@ -274,9 +360,7 @@ export class MatchClient {
     if (!ticketId) return;
     try {
       await this._delete(`/match/queue/${encodeURIComponent(ticketId)}`);
-    } catch (_) {
-      // best-effort; network may be gone
-    }
+    } catch (_) {}
   }
 
   async leaveQueue(ticketId) {
@@ -285,88 +369,6 @@ export class MatchClient {
     this._currentTicketId = null;
     await this._safeLeave(id);
   }
-
-  async createInvite({ timeControl = DEFAULT_TIMECONTROL } = {}) {
-    const myPeerId = generatePeerId();
-    const res = await this._postJson('/match/invite', {
-      peerId: myPeerId,
-      rating: this.rating,
-      timeControl,
-      ...(this.userId ? { userId: this.userId } : {}),
-    });
-    if (!res || !res.code) {
-      throw new QueueError('invite response missing code', { body: res });
-    }
-    return {
-      code: res.code,
-      myPeerId,
-      createdAt: res.createdAt || null,
-      expiresAt: res.expiresAt || null,
-    };
-  }
-
-  async joinInvite(code) {
-    if (!code || typeof code !== 'string') {
-      throw new QueueError('invite code is required');
-    }
-    const normalizedCode = code.trim().toUpperCase();
-    const myPeerId = generatePeerId();
-
-    const creatorView = await this._getJson(
-      `/match/invite/${encodeURIComponent(normalizedCode)}`
-    );
-
-    if (creatorView && creatorView.status === 'taken') {
-      return this._buildInviteGame({
-        creatorPeerId: creatorView.creatorPeerId,
-        creatorRating: creatorView.creatorRating,
-        timeControl: creatorView.timeControl,
-        myPeerId,
-      });
-    }
-
-    const claimRes = await this._postJson(
-      `/match/invite/${encodeURIComponent(normalizedCode)}/claim`
-    );
-
-    if (!claimRes || claimRes.status !== 'taken' || !claimRes.creatorPeerId) {
-      throw new QueueError('invite claim failed or already taken', {
-        body: claimRes,
-      });
-    }
-
-    return this._buildInviteGame({
-      creatorPeerId: claimRes.creatorPeerId,
-      creatorRating: claimRes.creatorRating,
-      timeControl: claimRes.timeControl,
-      myPeerId,
-    });
-  }
-
-  _buildInviteGame({ creatorPeerId, creatorRating, timeControl, myPeerId }) {
-    const opponentPeerId = String(creatorPeerId);
-    const myColor = myPeerId < opponentPeerId ? 'w' : 'b';
-    const gameId = `inv_${(myPeerId < opponentPeerId ? myPeerId : opponentPeerId)}_${(myPeerId > opponentPeerId ? myPeerId : opponentPeerId)}`;
-    return {
-      gameId,
-      myColor,
-      timeControl,
-      me: {
-        userId: this.userId,
-        handle: null,
-        rating: this.rating,
-        peerId: myPeerId,
-        color: myColor,
-      },
-      opponent: {
-        userId: null,
-        handle: null,
-        rating: typeof creatorRating === 'number' ? creatorRating : null,
-        peerId: opponentPeerId,
-        color: myColor === 'w' ? 'b' : 'w',
-      },
-    };
-  }
 }
 
 export class PeerConnection {
@@ -374,6 +376,7 @@ export class PeerConnection {
     myPeerId,
     role,
     onMessage,
+    onOpen,
     onDisconnect,
     onError,
     peerConfig,
@@ -387,6 +390,7 @@ export class PeerConnection {
     this.role = role;
     this.peerConfig = peerConfig || undefined;
     this.onMessage = typeof onMessage === 'function' ? onMessage : () => {};
+    this.onOpen = typeof onOpen === 'function' ? onOpen : () => {};
     this.onDisconnect =
       typeof onDisconnect === 'function' ? onDisconnect : () => {};
     this.onError = typeof onError === 'function' ? onError : () => {};
@@ -483,7 +487,7 @@ export class PeerConnection {
     }
   }
 
-  async _ensurePeerReady() {
+  async ready() {
     if (this._peerReadyError) throw this._peerReadyError;
     if (!this._peerReadyPromise) {
       throw new PeerError('peer was not initialized');
@@ -491,20 +495,20 @@ export class PeerConnection {
     await this._peerReadyPromise;
   }
 
-  async connect(opponentPeerId) {
+  async connect(targetPeerId) {
     if (this.role !== 'guest') {
       throw new PeerError("connect() is only valid for role='guest'");
     }
-    if (!opponentPeerId) throw new PeerError('opponentPeerId is required');
+    if (!targetPeerId) throw new PeerError('targetPeerId is required');
     if (this._connectionPromise) return this._connectionPromise;
 
     this._connectionPromise = (async () => {
-      await this._ensurePeerReady();
+      await this.ready();
       if (!this.peer) throw new PeerError('peer unavailable');
 
       let conn;
       try {
-        conn = this.peer.connect(opponentPeerId, {
+        conn = this.peer.connect(targetPeerId, {
           reliable: true,
           serialization: 'binary',
         });
@@ -567,7 +571,7 @@ export class PeerConnection {
     if (this._waitPromise) return this._waitPromise;
 
     this._waitPromise = (async () => {
-      await this._ensurePeerReady();
+      await this.ready();
 
       if (this._open) return;
 
@@ -609,14 +613,19 @@ export class PeerConnection {
   _wireConnection(conn) {
     this.conn = conn;
 
+    const fireOpen = () => {
+      this._open = true;
+      this._startLatencyProbes();
+      try {
+        this.onOpen();
+      } catch (_) {}
+    };
+
     conn.on('data', (data) => {
       this._handleData(data);
     });
 
-    conn.on('open', () => {
-      this._open = true;
-      this._startLatencyProbes();
-    });
+    conn.on('open', fireOpen);
 
     conn.on('close', () => {
       this._open = false;
@@ -646,8 +655,7 @@ export class PeerConnection {
     });
 
     if (conn.open) {
-      this._open = true;
-      this._startLatencyProbes();
+      fireOpen();
     }
   }
 
@@ -758,4 +766,421 @@ export class PeerConnection {
   }
 }
 
-export default { MatchClient, PeerConnection, QueueError, PeerError, ConnectionError };
+class InviteSession {
+  constructor({ handle, rating, isHost, peerConfig }) {
+    this._handle = handle || (isHost ? 'Host' : 'Guest');
+    this._rating = typeof rating === 'number' ? rating : null;
+    this._isHost = !!isHost;
+    this._peerConfig = peerConfig || DEFAULT_PEER_CONFIG;
+    this._conn = null;
+    this._peerHello = null;
+    this._helloSent = false;
+    this._helloDone = false;
+    this._helloPromise = null;
+    this._helloResolve = null;
+    this._helloReject = null;
+    this._helloTimer = null;
+    this._closed = false;
+    this.onMessage = () => {};
+  }
+
+  _bindConnection(conn) {
+    this._conn = conn;
+    this._helloPromise = new Promise((resolve, reject) => {
+      this._helloResolve = resolve;
+      this._helloReject = reject;
+    });
+    this._helloTimer = setTimeout(() => {
+      const e = new ConnectionError(
+        `hello handshake timed out after ${HELLO_TIMEOUT_MS}ms`
+      );
+      this._failHandshake(e);
+    }, HELLO_TIMEOUT_MS);
+  }
+
+  _sendHello(extra) {
+    if (!this._conn || !this._conn.isOpen) return;
+    if (this._helloSent) return;
+    this._helloSent = true;
+    this._conn.send({
+      t: 'hello',
+      handle: this._handle,
+      rating: this._rating,
+      isHost: this._isHost,
+      ...(extra || {}),
+    });
+  }
+
+  _handleIncoming(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'hello') {
+      if (!this._helloSent) this._sendHello();
+      if (!this._peerHello) {
+        this._peerHello = {
+          handle: msg.handle || (this._isHost ? 'Guest' : 'Host'),
+          rating: typeof msg.rating === 'number' ? msg.rating : null,
+          color: msg.color || null,
+          isHost: !!msg.isHost,
+        };
+      }
+      this._completeHello();
+      return;
+    }
+    if (this._helloDone) {
+      this.onMessage(msg);
+    }
+  }
+
+  _completeHello() {
+    if (this._helloDone) return;
+    this._helloDone = true;
+    if (this._helloTimer) {
+      clearTimeout(this._helloTimer);
+      this._helloTimer = null;
+    }
+    if (this._helloResolve) {
+      this._helloResolve(this._peerHello);
+      this._helloResolve = null;
+      this._helloReject = null;
+    }
+  }
+
+  _failHandshake(err) {
+    if (this._helloReject) {
+      const reject = this._helloReject;
+      this._helloResolve = null;
+      this._helloReject = null;
+      if (this._helloTimer) {
+        clearTimeout(this._helloTimer);
+        this._helloTimer = null;
+      }
+      reject(err);
+    }
+  }
+
+  async _awaitHello() {
+    if (!this._helloPromise) {
+      throw new ConnectionError('hello handshake was not initialized');
+    }
+    return this._helloPromise;
+  }
+
+  _onDisconnect(info, onPeerGone) {
+    if (!this._helloDone) {
+      this._failHandshake(
+        new ConnectionError('peer disconnected before hello handshake completed', {
+          reason: (info && info.reason) || 'closed',
+        })
+      );
+    }
+    if (typeof onPeerGone === 'function') {
+      try {
+        onPeerGone(info);
+      } catch (_) {}
+    }
+  }
+
+  send(message) {
+    if (!this._conn) throw new ConnectionError('invite session not connected');
+    return this._conn.send(message);
+  }
+
+  get isOpen() {
+    return !!(this._conn && this._conn.isOpen);
+  }
+
+  get latency() {
+    return this._conn ? this._conn.latency : null;
+  }
+}
+
+export class InviteHost {
+  constructor({
+    handle,
+    rating,
+    onGuestConnected,
+    onGuestDisconnected,
+    onError,
+    peerConfig,
+  } = {}) {
+    this._handle = handle;
+    this._rating = rating;
+    this._onGuestConnected =
+      typeof onGuestConnected === 'function' ? onGuestConnected : () => {};
+    this._onGuestDisconnected =
+      typeof onGuestDisconnected === 'function' ? onGuestDisconnected : () => {};
+    this._onError = typeof onError === 'function' ? onError : () => {};
+    this._peerConfig = peerConfig || DEFAULT_PEER_CONFIG;
+
+    this._code = null;
+    this._peerId = null;
+    this._hostColor = null;
+    this._session = null;
+    this._cancelled = false;
+
+    this.onMessage = () => {};
+  }
+
+  get code() {
+    return this._code;
+  }
+
+  get shareUrl() {
+    return this._code ? buildShareUrl(this._code) : null;
+  }
+
+  get peerId() {
+    return this._peerId;
+  }
+
+  get isOpen() {
+    return !!(this._session && this._session.isOpen);
+  }
+
+  get latency() {
+    return this._session ? this._session.latency : null;
+  }
+
+  async create() {
+    if (this._session) throw new PeerError('create() already called');
+
+    this._code = generateInviteCode();
+    this._peerId = inviteCodeToPeerId(this._code);
+    this._hostColor = Math.random() < 0.5 ? 'w' : 'b';
+
+    const session = new InviteSession({
+      handle: this._handle,
+      rating: this._rating,
+      isHost: true,
+      peerConfig: this._peerConfig,
+    });
+    session.onMessage = (msg) => this.onMessage(msg);
+    this._session = session;
+
+    const conn = new PeerConnection({
+      myPeerId: this._peerId,
+      role: 'host',
+      peerConfig: this._peerConfig,
+      onOpen: () => {
+        session._sendHello({ color: this._hostColor });
+      },
+      onMessage: (msg) => session._handleIncoming(msg),
+      onDisconnect: (info) => {
+        session._onDisconnect(info, (i) => {
+          if (session._helloDone) this._onGuestDisconnected(i);
+        });
+      },
+      onError: (err) => this._onError(err),
+    });
+    session._bindConnection(conn);
+
+    await conn.ready().catch((err) => {
+      this._session = null;
+      throw err;
+    });
+
+    conn.waitForConnection().catch((err) => {
+      if (!this._cancelled) this._onError(err);
+    });
+
+    session._awaitHello()
+      .then((peerHello) => {
+        const guestColor = invertColor(this._hostColor);
+        try {
+          this._onGuestConnected({
+            guestHandle: peerHello.handle,
+            guestRating: peerHello.rating,
+            myColor: this._hostColor,
+            guestColor,
+          });
+        } catch (_) {}
+      })
+      .catch((err) => {
+        if (!this._cancelled) this._onError(err);
+      });
+
+    return { code: this._code, shareUrl: this.shareUrl, peerId: this._peerId };
+  }
+
+  async cancel() {
+    this._cancelled = true;
+    const session = this._session;
+    this._session = null;
+    if (session && session._conn) {
+      try {
+        session._conn.close('host-cancelled');
+      } catch (_) {}
+    }
+  }
+
+  send(message) {
+    if (!this._session) throw new ConnectionError('invite host not active');
+    return this._session.send(message);
+  }
+
+  close(reason) {
+    return this.cancel(reason);
+  }
+}
+
+export class InviteGuest {
+  constructor({
+    handle,
+    rating,
+    onHostConnected,
+    onHostDisconnected,
+    onError,
+    peerConfig,
+  } = {}) {
+    this._handle = handle;
+    this._rating = rating;
+    this._onHostConnected =
+      typeof onHostConnected === 'function' ? onHostConnected : () => {};
+    this._onHostDisconnected =
+      typeof onHostDisconnected === 'function' ? onHostDisconnected : () => {};
+    this._onError = typeof onError === 'function' ? onError : () => {};
+    this._peerConfig = peerConfig || DEFAULT_PEER_CONFIG;
+
+    this._myPeerId = null;
+    this._hostPeerId = null;
+    this._hostColor = null;
+    this._myColor = null;
+    this._session = null;
+    this._left = false;
+
+    this.onMessage = () => {};
+  }
+
+  get myPeerId() {
+    return this._myPeerId;
+  }
+
+  get hostPeerId() {
+    return this._hostPeerId;
+  }
+
+  get isOpen() {
+    return !!(this._session && this._session.isOpen);
+  }
+
+  get latency() {
+    return this._session ? this._session.latency : null;
+  }
+
+  async join(code, options = {}) {
+    if (this._session) throw new PeerError('join() already called');
+    const signal = options.signal;
+    if (signal && signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
+    const normalized = normalizeCode(code);
+    if (!normalized) throw new PeerError('invalid invite code');
+
+    this._hostPeerId = inviteCodeToPeerId(normalized);
+    this._myPeerId = generatePeerId();
+
+    const session = new InviteSession({
+      handle: this._handle,
+      rating: this._rating,
+      isHost: false,
+      peerConfig: this._peerConfig,
+    });
+    session.onMessage = (msg) => this.onMessage(msg);
+    this._session = session;
+
+    const onAbort = () => {
+      this._failBeforeReady(new DOMException('Aborted', 'AbortError'));
+    };
+    if (signal) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    const conn = new PeerConnection({
+      myPeerId: this._myPeerId,
+      role: 'guest',
+      peerConfig: this._peerConfig,
+      onOpen: () => {
+        session._sendHello();
+      },
+      onMessage: (msg) => session._handleIncoming(msg),
+      onDisconnect: (info) => {
+        session._onDisconnect(info, (i) => {
+          if (session._helloDone) this._onHostDisconnected(i);
+        });
+      },
+      onError: (err) => this._onError(err),
+    });
+    session._bindConnection(conn);
+
+    try {
+      await conn.ready();
+      await conn.connect(this._hostPeerId);
+      const peerHello = await session._awaitHello();
+
+      this._hostColor = peerHello.color || 'w';
+      this._myColor = invertColor(this._hostColor);
+
+      const info = {
+        hostPeerId: this._hostPeerId,
+        hostHandle: peerHello.handle,
+        hostRating: peerHello.rating,
+        hostColor: this._hostColor,
+        myColor: this._myColor,
+      };
+      try {
+        this._onHostConnected(info);
+      } catch (_) {}
+      return info;
+    } catch (err) {
+      this._failBeforeReady(err);
+      throw err;
+    } finally {
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+  }
+
+  _failBeforeReady(err) {
+    const session = this._session;
+    this._session = null;
+    if (session && session._conn) {
+      try {
+        session._conn.close('aborted');
+      } catch (_) {}
+    }
+    if (err && err.name === 'AbortError') throw err;
+  }
+
+  async leave() {
+    this._left = true;
+    const session = this._session;
+    this._session = null;
+    if (session && session._conn) {
+      try {
+        session._conn.close('guest-left');
+      } catch (_) {}
+    }
+  }
+
+  send(message) {
+    if (!this._session) throw new ConnectionError('invite guest not connected');
+    return this._session.send(message);
+  }
+
+  close(reason) {
+    return this.leave(reason);
+  }
+}
+
+export default {
+  MatchClient,
+  PeerConnection,
+  InviteHost,
+  InviteGuest,
+  QueueError,
+  PeerError,
+  ConnectionError,
+  parseInviteFromUrl,
+  DEFAULT_PEER_CONFIG,
+};

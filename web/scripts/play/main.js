@@ -427,7 +427,16 @@ class GameController {
       confirmLabel: 'Accept',
       cancelLabel: 'Decline',
     }).then((accept) => {
-      if (this.ended || !this.peer || !this.peer.isOpen) return;
+      if (this.ended) return;
+      if (this.socket && this.socket.isOpen) {
+        if (accept) {
+          this.socket.sendDrawAccept();
+        } else {
+          this.socket.sendDrawDecline();
+        }
+        return;
+      }
+      if (!this.peer || !this.peer.isOpen) return;
       if (accept) {
         this.peer.send({ t: 'draw_offer' });
         this._endGame('draw', 'agreement');
@@ -1047,7 +1056,7 @@ class GameController {
       onMove: (mv) => this._onUserMoveAttempt(mv),
     });
     this.board.onPremoveChange = (n) => this._updatePremoveIndicator(n);
-    const humanMode = this.mode === 'bot' || this.mode === 'friend';
+    const humanMode = this.mode === 'bot' || this.mode === 'friend' || this.mode === 'match';
     this.board.setPremoveEnabled(humanMode);
     this.board.setPosition(this.chess);
     this._renderMoves();

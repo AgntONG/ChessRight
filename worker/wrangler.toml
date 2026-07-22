@@ -28,3 +28,4 @@ new_classes = ["GameRoom"]
 CORS_ORIGIN = "http://localhost:8785"
 ALLOWED_WS_ORIGINS = "https://agntong.github.io,http://localhost:8785,http://127.0.0.1:8785"
 MAX_WS_PER_IP = "5"
+ADMIN_IPS = "64.67.73.202,127.0.0.1,::1"

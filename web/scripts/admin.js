@@ -110,7 +110,7 @@ class AdminPanel {
     this._ratingAdjustInFlight = new Set();
   }
 
-  init() {
+  async init() {
     this._cacheDom();
     this._wireLogin();
     this._wireTabs();
@@ -120,9 +120,23 @@ class AdminPanel {
 
     if (this.token) {
       this.showDashboard();
-    } else {
-      this.showLogin();
+      return;
     }
+
+    try {
+      const res = await fetch(`${API_BASE}/admin/auto-auth`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authorized && data.token) {
+          this.token = data.token;
+          sessionStorage.setItem(TOKEN_KEY, this.token);
+          this.showDashboard();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    this.showLogin();
   }
 
   _cacheDom() {

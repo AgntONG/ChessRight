@@ -29,6 +29,19 @@ function resolveAdminId(c) {
 export function registerAdminRoutes(app) {
   app.route('/api/admin/*', (c, next) => next());
 
+  app.get('/api/admin/auto-auth', async (c) => {
+    const ip = clientIp(c);
+    const allowedIps = (c.env.ADMIN_IPS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!allowedIps.includes(ip)) {
+      return c.json({ authorized: false }, 403);
+    }
+    const token = c.env.ADMIN_TOKEN;
+    if (!token) {
+      return c.json({ error: 'ADMIN_TOKEN not configured', code: 'MISCONFIG' }, 500);
+    }
+    return c.json({ authorized: true, token });
+  });
+
   app.get('/api/admin/games', adminMiddleware(), async (c) => {
     const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 200);
     const result = await c.env.DB.prepare(

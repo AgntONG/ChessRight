@@ -1187,6 +1187,8 @@ export class InviteHost {
       throw err;
     });
 
+    this._onStatusChange('connected');
+
     conn.waitForConnection().catch((err) => {
       if (!this._cancelled) this._onError(err);
     });

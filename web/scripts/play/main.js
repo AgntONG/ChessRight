@@ -422,22 +422,21 @@ class GameController {
     this._initClocks();
 
     try {
-      this.engine = new Engine({
-        onError: (err) => {
-          toast({ title: 'Engine error', message: err.message || 'Stockfish failed', kind: 'bad' });
-        },
-      });
+      this.engine = new CloudEngine({ onError: () => {} });
       await this.engine.ready();
       await this.engine.setLevel(this._skillToLevel(skillLevel));
       await this.engine.newGame();
-    } catch (err) {
+    } catch (cloudErr) {
       try {
-        this.engine = new CloudEngine({ onError: () => {} });
+        this.engine = new Engine({
+          onError: (err) => {
+            toast({ title: 'Engine error', message: err.message || 'Stockfish failed', kind: 'bad' });
+          },
+        });
         await this.engine.ready();
         await this.engine.setLevel(this._skillToLevel(skillLevel));
         await this.engine.newGame();
-        toast({ title: 'Cloud engine', message: 'Using online Stockfish (SF18 NNUE).', kind: 'info' });
-      } catch (cloudErr) {
+      } catch (err) {
         toast({ title: 'Engine unavailable', message: 'Falling back to a simple bot.', kind: 'bad' });
         this.engine = null;
       }

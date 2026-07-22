@@ -2,26 +2,26 @@ const DEFAULT_WORKER_URL = 'assets/stockfish/stockfish-nnue-16-single.js';
 const DEFAULT_CDN_URL = 'https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js';
 
 const LEVELS = [
-  { movetime: 50,   skill:  0, depth: 5  },
-  { movetime: 80,   skill:  1, depth: 5  },
-  { movetime: 110,  skill:  2, depth: 5  },
-  { movetime: 140,  skill:  3, depth: 5  },
-  { movetime: 170,  skill:  4, depth: 5  },
-  { movetime: 200,  skill:  5, depth: 6  },
-  { movetime: 230,  skill:  6, depth: 6  },
-  { movetime: 260,  skill:  7, depth: 7  },
-  { movetime: 300,  skill:  8, depth: 7  },
-  { movetime: 350,  skill:  9, depth: 8  },
-  { movetime: 400,  skill: 10, depth: 9  },
-  { movetime: 450,  skill: 11, depth: 10 },
-  { movetime: 500,  skill: 12, depth: 11 },
-  { movetime: 600,  skill: 13, depth: 12 },
-  { movetime: 700,  skill: 14, depth: 13 },
-  { movetime: 800,  skill: 15, depth: 14 },
-  { movetime: 900,  skill: 16, depth: 15 },
-  { movetime: 1000, skill: 17, depth: 16 },
+  { movetime: 100,  skill:  0, depth: 8  },
+  { movetime: 100,  skill:  1, depth: 8  },
+  { movetime: 150,  skill:  2, depth: 9  },
+  { movetime: 150,  skill:  3, depth: 9  },
+  { movetime: 200,  skill:  4, depth: 10 },
+  { movetime: 200,  skill:  5, depth: 10 },
+  { movetime: 300,  skill:  6, depth: 11 },
+  { movetime: 300,  skill:  7, depth: 12 },
+  { movetime: 400,  skill:  8, depth: 12 },
+  { movetime: 400,  skill:  9, depth: 13 },
+  { movetime: 500,  skill: 10, depth: 14 },
+  { movetime: 500,  skill: 11, depth: 14 },
+  { movetime: 600,  skill: 12, depth: 15 },
+  { movetime: 600,  skill: 13, depth: 15 },
+  { movetime: 700,  skill: 14, depth: 16 },
+  { movetime: 800,  skill: 15, depth: 16 },
+  { movetime: 900,  skill: 16, depth: 17 },
+  { movetime: 1000, skill: 17, depth: 17 },
   { movetime: 1200, skill: 19, depth: 18 },
-  { movetime: 1500, skill: 20, depth: 20 },
+  { movetime: 1500, skill: 20, depth: 18 },
 ];
 
 function levelConfig(level) {
@@ -280,16 +280,9 @@ export class Engine {
   }
 
   async _handshake() {
-    this._send('setoption name Hash value 128');
+    this._send('setoption name Hash value 64');
     this._send('setoption name UCI_Chess960 value false');
-    this._send('setoption name Use NNUE value true');
-    this.nnueProbe = true;
-    await this._sendReady({ timeoutMs: 60000 });
-    this.nnueProbe = false;
-    if (!this.nnueEnabled) {
-      this._send('setoption name Use NNUE value false');
-      await this._sendReady();
-    }
+    await this._sendReady();
     this._send('ucinewgame');
     await this._sendReady();
   }
@@ -434,7 +427,7 @@ const CLOUD_APIS = [
         body: JSON.stringify({
           fen,
           depth: Math.min(depth || 12, 18),
-          maxThinkingTime: Math.min(movetime || 100, 100),
+          maxThinkingTime: Math.min(Math.max(movetime || 200, 100), 100),
         }),
       });
       if (!res.ok) throw new Error(`chess-api.com returned ${res.status}`);

@@ -362,15 +362,24 @@ export const store = {
     }
     if (pushed > 0) writeGames(games);
 
-    this.setUser({
+    const nextUser = {
       id: serverUid,
       token: serverToken,
       serverId: serverUid,
-      rating: typeof auth.rating === 'number' ? auth.rating : u.rating,
       lastSync: Date.now(),
       syncState: 'synced',
       syncError: null
-    });
+    };
+    const localHasRating = typeof u.rating === 'number' && u.rating > 0;
+    const serverRating = typeof auth.rating === 'number' ? auth.rating : null;
+    if (localHasRating) {
+      nextUser.rating = u.rating;
+      if (typeof u.ratingVolatility === 'number') nextUser.ratingVolatility = u.ratingVolatility;
+      if (typeof u.ratingRd === 'number') nextUser.ratingRd = u.ratingRd;
+    } else if (serverRating != null) {
+      nextUser.rating = serverRating;
+    }
+    this.setUser(nextUser);
     lsSet(KEY_SYNC, String(startedAt));
 
     let board = null;

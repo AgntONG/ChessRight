@@ -108,6 +108,17 @@ class AccountPage {
     this._expandedRow = null;
   }
 
+  _currentUser() {
+    try {
+      const live = store.getUser();
+      if (live) {
+        this.user = live;
+        return live;
+      }
+    } catch (e) {}
+    return this.user || { handle: 'Guest', rating: 1200, gamesPlayed: 0 };
+  }
+
   async init() {
     this.bindNav();
     this.bindYear();

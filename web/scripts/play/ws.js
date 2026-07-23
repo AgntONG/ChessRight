@@ -199,11 +199,10 @@ export class GameSocket {
             to: msg.to,
             promotion: msg.promotion,
             san: msg.san,
-            clock: msg.clock,
           });
         } catch (_) {}
-        if (msg.clock) {
-          try { this.onClock(msg.clock); } catch (_) {}
+        if (msg.clocks) {
+          try { this.onClock(msg.clocks); } catch (_) {}
         }
         break;
       }

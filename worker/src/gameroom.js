@@ -313,7 +313,7 @@ export class GameRoom {
     await this.persistState();
     await this.recordActive();
 
-    this.broadcast({ type: 'start', gameState: this.publicGameState(), clocks: this.clocks, lastMoveAt: this.lastMoveAt });
+    this.broadcast({ type: 'game_start', gameState: this.publicGameState(), clocks: this.clocks, lastMoveAt: this.lastMoveAt });
     this.startHeartbeat();
   }
 
@@ -373,21 +373,24 @@ export class GameRoom {
       return;
     }
 
-    if (!msg.move || typeof msg.move !== 'object') {
+    if (!msg.from || !msg.to) {
       this.sendTo(ws, { type: 'error', error: 'Invalid move payload', code: 'INVALID_MOVE' });
       return;
     }
 
+    const moveObj = { from: msg.from, to: msg.to };
+    if (msg.promotion) moveObj.promotion = msg.promotion;
+
     const chess = new Chess(this.gameState.fen);
     let result;
     try {
-      result = chess.move(msg.move);
+      result = chess.move(moveObj);
     } catch {
       result = null;
     }
     if (!result) {
       this.flag(ws, attachment, 'illegal_move');
-      this.sendTo(ws, { type: 'illegal', move: msg.move });
+      this.sendTo(ws, { type: 'illegal', move: moveObj });
       return;
     }
 
